@@ -1,0 +1,12 @@
+{%  extends 'base.html' %}
+{% block content %}
+
+    <h1>Active learning projects:</h1>
+    <ul>
+    {%  for p in projects %}
+        <li/> <a href="{% url 'actcode:project' project=p.id %}">{{ p.id }}: {{ p.name }}</a>
+    {% endfor %}
+
+    </ul>
+
+{%  endblock %}

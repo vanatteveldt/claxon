@@ -1,0 +1,18 @@
+{%  extends 'base.html' %}
+{% block content %}
+<h1>Project {{ view.project.id }}: {{  view.project.name }}</h1>
+
+<table>
+    <tr><th>Label</th><th>#Gold</th><th>#Train</th></tr>
+    {%  for l in labelstats %}
+        <tr>
+            <td>{{ l.label }}</td>
+            <td>{{ l.ngold }}</td>
+            <td>{{ l.ntrain }}</td>
+            <td>[Train]</td>
+            <td>[<a href="{% url 'actcode:code-gold' project=view.project.id label=l.id %}">Evaluate</a>]</td>
+        </tr>
+    {%  endfor %}
+
+</table>
+{%  endblock %}

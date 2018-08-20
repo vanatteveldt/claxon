@@ -1,0 +1,41 @@
+{%  extends 'base.html' %}
+{%  block content %}
+
+   <div class="progress">
+  <div class="progress-bar progress-bar-striped bg-success progress-bar-success" role="progressbar" style="width: {{percent_w }}%;" aria-valuenow="{{ percent }}" aria-valuemin="0" aria-valuemax="100">
+      {{ done|length}} / {{ total }}
+  </div>
+</div>
+
+<pre>
+
+Project: <a href="{%  url 'actcode:project' project=view.project.id %}">{{ view.project.id}}: {{ view.project.name }}</a>
+Coding label: {{ view.label.label }}
+Done: {{ done|length }} / {{ total }}
+</pre>
+
+<a class="btn btn-success btn-lg" href="{% url 'actcode:code-gold' project=view.project.id label=view.label.id %}?doc={{doc.id}}&accept=1">ACCEPT</a> |
+<a class="btn btn-danger btn-lg" href="{% url 'actcode:code-gold' project=view.project.id label=view.label.id %}?doc={{doc.id}}&accept=0">REJECT</a>
+<br/>
+<br/>
+    <div id="text" style="border:2px solid grey; padding:1em">{{ doc.text }}</div>
+<br/>
+<br/>
+<a class="btn btn-success btn-lg" href="{% url 'actcode:code-gold' project=view.project.id label=view.label.id %}?doc={{doc.id}}&accept=1">ACCEPT</a> |
+<a class="btn btn-danger btn-lg" href="{% url 'actcode:code-gold' project=view.project.id label=view.label.id %}?doc={{doc.id}}&accept=0">REJECT</a>
+
+{%  endblock %}
+
+{%  block postscript %}
+<script>
+function go(accept) {
+    $("#text").css({"border-color": accept==1?"green":"red"});
+    url = "{% url 'actcode:code-gold' project=view.project.id label=view.label.id %}?doc={{doc.id}}&accept="+accept;
+
+    window.setTimeout( function() {window.location.href = url}, 500 );
+}
+
+Mousetrap.bind('a', function() { go(1); });
+Mousetrap.bind('x', function() { go(0); });
+</script>
+{%  endblock %}
