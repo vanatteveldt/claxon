@@ -1,18 +1,38 @@
 {%  extends 'base.html' %}
 {% block content %}
 <h1>Project {{ view.project.id }}: {{  view.project.name }}</h1>
+<pre>
+Base model: {{ view.project.base_model }}
+#Documents (training): {{ ntrain_total }}
+#Documents (evaluation): {{ ngold_total }}
+</pre>
 
-<table>
-    <tr><th>Label</th><th>#Gold</th><th>#Train</th></tr>
+<table class="table table-hover">
+    <tr>
+        <th>Label</th>
+        <th>#Gold</th>
+        <th>#Train</th>
+        <th>Pr</th>
+        <th>Re</th>
+        <th>F1</th>
+        <th>Actions</th>
+
+    </tr>
     {%  for l in labelstats %}
         <tr>
-            <td>{{ l.label }}</td>
+            <td>{{ l.label.label }}</td>
             <td>{{ l.ngold }}</td>
             <td>{{ l.ntrain }}</td>
-            <td>[Train]</td>
-            <td>[<a href="{% url 'actcode:code-gold' project=view.project.id label=l.id %}">Evaluate</a>]</td>
+            <td>{{ l.label.precision | floatformat:2}}</td>
+            <td>{{ l.label.recall | floatformat:2}}</td>
+            <td>{{ l.label.fscore | floatformat:2}}</td>
+            <td>
+                [Train] |
+                [<a href="{% url 'actcode:code-gold' project=view.project.id label=l.label.id %}">Evaluate</a>] |
+                [Trigger]
+            </td>
         </tr>
     {%  endfor %}
 
-</table>
+</table.table-hover>
 {%  endblock %}

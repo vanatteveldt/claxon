@@ -27,14 +27,16 @@ class ProjectView(TemplateView):
     def get_context_data(self, **kwargs):
         kwargs = super().get_context_data(**kwargs)
 
-        labelstats = {l.id: dict(id=l.id, label=l.label) for l in self.project.label_set.all()}
+        labelstats = {l.id: dict(label=l) for l in self.project.label_set.all()}
 
         for a in Annotation.objects.filter(document__project=self.project.id).values("document__gold", "label",).annotate(n=Count('id')):
             key = 'ngold' if a['document__gold'] else 'ntrain'
             labelstats[a['label']][key] = a['n']
 
+        kwargs['ngold_total'] = len(self.project.document_set.filter(gold=True))
+        kwargs['ntrain_total'] = len(self.project.document_set.filter(gold=False))
 
-        kwargs['labelstats'] = sorted(labelstats.values(), key=lambda l:l['label'])
+        kwargs['labelstats'] = sorted(labelstats.values(), key=lambda l:l['label'].label)
         return kwargs
 
 
