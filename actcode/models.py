@@ -23,6 +23,7 @@ class Document(models.Model):
     project = models.ForeignKey(Project, models.CASCADE)
     text = models.TextField()
     gold = models.BooleanField()
+    reference = models.TextField(null=True)
 
 class Label(models.Model):
     project = models.ForeignKey(Project, models.CASCADE)
