@@ -31,7 +31,7 @@ Done: {{ done|length }} / {{ total }}
 <script>
 function go(accept) {
     $("#text").css({"border-color": accept==1?"green":"red"});
-    url = "{% url 'actcode:code-gold' project=view.project.id label=view.label.id %}?doc={{doc.id}}&accept="+accept;
+    url = accept?"{{accept_url}}":"{{reject_url}}";
 
     window.setTimeout( function() {window.location.href = url}, 500 );
 }

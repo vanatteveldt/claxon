@@ -27,7 +27,7 @@ Base model: {{ view.project.base_model }}
             <td>{{ l.label.recall | floatformat:2}}</td>
             <td>{{ l.label.fscore | floatformat:2}}</td>
             <td>
-                [Train] |
+                [<a href="{% url 'actcode:code-learn' project=view.project.id label=l.label.id %}">Train</a>] |
                 [<a href="{% url 'actcode:code-gold' project=view.project.id label=l.label.id %}">Evaluate</a>] |
                 [Trigger]
             </td>
