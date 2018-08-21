@@ -18,11 +18,7 @@ Done: {{ done|length }} / {{ total }}
 <a class="btn btn-danger btn-lg" href="{% url 'actcode:code-gold' project=view.project.id label=view.label.id %}?doc={{doc.id}}&accept=0">REJECT</a>
 <br/>
 <br/>
-    <div id="text" style="border:2px solid grey; padding:1em">{{ doc.text }}</div>
-<br/>
-<br/>
-<a class="btn btn-success btn-lg" href="{% url 'actcode:code-gold' project=view.project.id label=view.label.id %}?doc={{doc.id}}&accept=1">ACCEPT</a> |
-<a class="btn btn-danger btn-lg" href="{% url 'actcode:code-gold' project=view.project.id label=view.label.id %}?doc={{doc.id}}&accept=0">REJECT</a>
+    <div id="text" style="border:2px solid grey; padding:1em">{{ text|safe }}</div>
 
 {%  endblock %}
 

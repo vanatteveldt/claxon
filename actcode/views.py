@@ -60,13 +60,13 @@ class CodeView(TemplateView):
 
     def get_context_data(self, **kwargs):
         kwargs = super().get_context_data(**kwargs)
-        done = {a.document_id for a in Annotation.objects.filter(document__gold=True, document__project_id=self.project.id)}
+        done = {a.document_id for a in Annotation.objects.filter(document__gold=True, label=self.label, document__project_id=self.project.id)}
         total = len(Document.objects.filter(gold=True, project_id=self.project.id))
         if total > len(done):
             doc = self.project.document_set.filter(gold=True).exclude(pk__in=done)[0]
         percent = 100 * len(done) // total
         percent_w = 10 + 90 * len(done) // total
-
+        text = doc.text.replace("\n", "<br/>")
         kwargs.update(**locals())
         return kwargs
 
