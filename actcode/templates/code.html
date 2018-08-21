@@ -11,11 +11,16 @@
 
 Project: <a href="{%  url 'actcode:project' project=view.project.id %}">{{ view.project.id}}: {{ view.project.name }}</a>
 Coding label: {{ view.label.label }}
+    {% if state %}
+This session: {{ state.coded_docids | length }} coded, {{ state.todo_docids | length }} in queue
+Document: {{ doc.id }} (score: {{ score }})
+    {%  else %}
 Done: {{ done|length }} / {{ total }}
+{%  endif %}
 </pre>
 
-<a class="btn btn-success btn-lg" href="{% url 'actcode:code-gold' project=view.project.id label=view.label.id %}?doc={{doc.id}}&accept=1">ACCEPT</a> |
-<a class="btn btn-danger btn-lg" href="{% url 'actcode:code-gold' project=view.project.id label=view.label.id %}?doc={{doc.id}}&accept=0">REJECT</a>
+<a class="btn btn-success btn-lg" href="{{ accept_url }}">ACCEPT</a> |
+<a class="btn btn-danger btn-lg" href="{{ reject_url }}">REJECT</a>
 <br/>
 <br/>
     <div id="text" style="border:2px solid grey; padding:1em">{{ text|safe }}</div>

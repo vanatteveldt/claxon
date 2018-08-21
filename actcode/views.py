@@ -1,10 +1,8 @@
 from django.db.models import Count
-from django.forms import ModelForm
-from django.shortcuts import render
+from django.urls import reverse
+from django.views.generic import TemplateView
 
-# Create your views here.
-from django.views.generic import TemplateView, FormView
-
+from actcode.ml import ActiveLearn
 from actcode.models import Project, Annotation, Label, Document
 
 
@@ -67,6 +65,46 @@ class CodeView(TemplateView):
         percent = 100 * len(done) // total
         percent_w = 10 + 90 * len(done) // total
         text = doc.text.replace("\n", "<br/>")
+        base_url = reverse("code-gold", kwargs=dict(project=self.project.id, label=self.label.id))
+        accept_url = "{base_url}?doc={doc.id}&accept=1".format(**locals())
+        reject_url = "{base_url}?doc={doc.id}&accept=0".format(**locals())
         kwargs.update(**locals())
         return kwargs
+
+
+_AC_CACHE_KEY = "actcode_active_state"
+class ActiveCodeView(TemplateView):
+    template_name = "code.html"
+
+    def get(self, request, *args, **kwargs):
+        self.project = Project.objects.get(pk=self.kwargs['project'])
+        self.label = Label.objects.get(pk=self.kwargs['label'])
+
+        state = self.request.session.get(_AC_CACHE_KEY)
+        if state:
+            self.state = ActiveLearn.from_dict(state)
+        else:
+            self.state = ActiveLearn(self.label.id)
+
+        if 'accept' in self.request.GET:
+            doc = Document.objects.get(pk=int(self.request.GET['doc']))
+            Annotation.objects.create(document=doc, label_id=kwargs['label'], accept=self.request.GET['accept'])
+            self.state.done(doc.id)
+
+        result = super().get(request, *args, **kwargs)
+        self.request.session[_AC_CACHE_KEY] = self.state.to_dict()
+        return result
+
+
+    def get_context_data(self, **kwargs):
+        kwargs = super().get_context_data(**kwargs)
+        doc, score = self.state.get_doc()
+        text = doc.text.replace("\n", "<br/>")
+        base_url = reverse("actcode:code-learn",  kwargs=dict(project=self.project.id, label=self.label.id))
+        accept_url = "{base_url}?doc={doc.id}&accept=1".format(**locals())
+        reject_url = "{base_url}?doc={doc.id}&accept=0".format(**locals())
+        state = self.state
+        kwargs.update(**locals())
+        return kwargs
+
 

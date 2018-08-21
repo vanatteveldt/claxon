@@ -1,4 +1,7 @@
+import spacy
 from django.db import models
+from spacy.language import Language
+
 
 class Project(models.Model):
     name = models.TextField()
@@ -8,15 +11,9 @@ class Project(models.Model):
     model_task = models.TextField(null=True)
     model_location = models.TextField(null=True)
 
-    def get_docs(self, model, label, uncertain=True):
-        docs = list(self.document_set.all())
-        texts = (d.text for d in docs)
-        scores = (x.cats[label] for x in model.pipe(texts))
-
-        if uncertain: key = lambda txt_score: abs(txt_score[1] - 0.5)
-        else: key = lambda txt_score: -txt_score[1]
-
-        return sorted(zip(docs, scores), key = key)
+    def get_model(self) -> Language:
+        model_name = self.base_model
+        return spacy.load(model_name)
 
 
 class Document(models.Model):
@@ -24,6 +21,8 @@ class Document(models.Model):
     text = models.TextField()
     gold = models.BooleanField()
     reference = models.TextField(null=True)
+    tokens = models.BinaryField(null=True)
+
 
 class Label(models.Model):
     project = models.ForeignKey(Project, models.CASCADE)
@@ -57,6 +56,7 @@ class Label(models.Model):
 
     def __str__(self):
         return self.label
+
 
 class Annotation(models.Model):
     document = models.ForeignKey(Document, models.CASCADE)
