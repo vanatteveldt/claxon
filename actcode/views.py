@@ -26,14 +26,11 @@ class ProjectView(TemplateView):
         kwargs = super().get_context_data(**kwargs)
 
         labelstats = {l.id: dict(label=l) for l in self.project.label_set.all()}
-
         for a in Annotation.objects.filter(document__project=self.project.id).values("document__gold", "label",).annotate(n=Count('id')):
             key = 'ngold' if a['document__gold'] else 'ntrain'
             labelstats[a['label']][key] = a['n']
-
-        kwargs['ngold_total'] = len(self.project.document_set.filter(gold=True))
-        kwargs['ntrain_total'] = len(self.project.document_set.filter(gold=False))
-
+        kwargs['ngold_total'] = self.project.document_set.filter(gold=True).count()
+        kwargs['ntrain_total'] = self.project.document_set.filter(gold=False).count()
         kwargs['labelstats'] = sorted(labelstats.values(), key=lambda l:l['label'].label)
         return kwargs
 
