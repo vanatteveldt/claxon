@@ -69,7 +69,7 @@ class CodeView(TemplateView):
         return kwargs
 
 
-_AC_CACHE_KEY = "actcode_active_state"
+_AC_CACHE_KEY = "actcode_active_state_{label}"
 class ActiveCodeView(TemplateView):
     template_name = "code.html"
 
@@ -77,7 +77,9 @@ class ActiveCodeView(TemplateView):
         self.project = Project.objects.get(pk=self.kwargs['project'])
         self.label = Label.objects.get(pk=self.kwargs['label'])
 
-        state = self.request.session.get(_AC_CACHE_KEY)
+        CACHE_KEY = _AC_CACHE_KEY.format(label=self.label.id)
+
+        state = self.request.session.get(CACHE_KEY)
         if state:
             self.state = ActiveLearn.from_dict(state)
         else:
@@ -89,7 +91,7 @@ class ActiveCodeView(TemplateView):
             self.state.done(doc.id)
 
         result = super().get(request, *args, **kwargs)
-        self.request.session[_AC_CACHE_KEY] = self.state.to_dict()
+        self.request.session[CACHE_KEY] = self.state.to_dict()
         return result
 
 
