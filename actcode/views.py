@@ -62,7 +62,7 @@ class CodeView(TemplateView):
         percent = 100 * len(done) // total
         percent_w = 10 + 90 * len(done) // total
         text = doc.text.replace("\n", "<br/>")
-        base_url = reverse("code-gold", kwargs=dict(project=self.project.id, label=self.label.id))
+        base_url = reverse("actcode:code-gold", kwargs=dict(project=self.project.id, label=self.label.id))
         accept_url = "{base_url}?doc={doc.id}&accept=1".format(**locals())
         reject_url = "{base_url}?doc={doc.id}&accept=0".format(**locals())
         kwargs.update(**locals())
