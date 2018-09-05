@@ -57,14 +57,16 @@ class CodeView(TemplateView):
         kwargs = super().get_context_data(**kwargs)
         done = {a.document_id for a in Annotation.objects.filter(document__gold=True, label=self.label, document__project_id=self.project.id)}
         total = len(Document.objects.filter(gold=True, project_id=self.project.id))
-        if total > len(done):
-            doc = self.project.document_set.filter(gold=True).exclude(pk__in=done)[0]
+        all_done = total <= len(done)
         percent = 100 * len(done) // total
         percent_w = 10 + 90 * len(done) // total
-        text = doc.text.replace("\n", "<br/>")
-        base_url = reverse("actcode:code-gold", kwargs=dict(project=self.project.id, label=self.label.id))
-        accept_url = "{base_url}?doc={doc.id}&accept=1".format(**locals())
-        reject_url = "{base_url}?doc={doc.id}&accept=0".format(**locals())
+        if not all_done:
+            doc = self.project.document_set.filter(gold=True).exclude(pk__in=done)[0]
+            text = doc.text.replace("\n", "<br/>")
+            base_url = reverse("actcode:code-gold", kwargs=dict(project=self.project.id, label=self.label.id))
+            accept_url = "{base_url}?doc={doc.id}&accept=1".format(**locals())
+            reject_url = "{base_url}?doc={doc.id}&accept=0".format(**locals())
+
         kwargs.update(**locals())
         return kwargs
 

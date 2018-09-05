@@ -18,13 +18,16 @@ Document: {{ doc.id }} (score: {{ score }})
 Done: {{ done|length }} / {{ total }}
 {%  endif %}
 </pre>
+{%  if all_done %}
 
+    All done!
+{%  else %}
 <a class="btn btn-success btn-lg" href="{{ accept_url }}">ACCEPT</a> |
 <a class="btn btn-danger btn-lg" href="{{ reject_url }}">REJECT</a>
 <br/>
 <br/>
     <div id="text" style="border:2px solid grey; padding:1em">{{ text|safe }}</div>
-
+{%  endif %}
 {%  endblock %}
 
 {%  block postscript %}
