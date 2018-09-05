@@ -1,14 +1,19 @@
 import datetime
+import os
 from random import sample
 
+from django.conf import settings
+from django.db import connection, reset_queries
 from django.utils import timezone
 from numpy import argsort
 from spacy.tokens.doc import Doc
 from spacy.util import minibatch, compounding
+from tqdm import tqdm
 
-from actcode.models import Label, Annotation, Document
+from spacy.language import Language
 
-
+from actcode.eval import Eval, combine
+from actcode.models import Label, Annotation, Document, Project
 
 
 class ActiveLearn:
@@ -98,33 +103,55 @@ class ActiveLearn:
         al.coded_docids = state["coded_docids"]
         return al
 
-def evaluate(label: Label):
+def evaluate(project: Project, model=None):
     """Evaluate a label based on the project's model and gold annotations"""
-    model = label.project.get_model()
-    ann = list(Annotation.objects.filter(document__gold=True, label=label))
-    print("Classifying {} annotated documents".format(len(ann)))
+    if model is None:
+        model = project.get_model()
+    tc = model.get_pipe("textcat")
+    labels = {l.id: l.label for l in project.label_set.all()}
+    eval = {label: Eval(label) for label in labels.values()}
 
-    texts = [a.document.text for a in ann]
-    result = model.pipe(texts)
-    predictions = [x.cats[label.label] > .5 for x in result]
+    gold = {}  # doc.id : {label: T/F, ..}
+    for a in Annotation.objects.filter(document__gold=True, document__project=project):
+        gold.setdefault(a.document_id, {})[labels[a.label_id]] = a.accept
 
-    print("Processing results")
-    tp, fp, fn = 0, 0, 0
-    for a, p in zip(ann, predictions):
-        if a.accept and p:
-            tp += 1
-        elif a.accept and not p:
-            fn += 1
-        elif not a.accept and p:
-            fp += 1
+    docs = list(gold.keys())
+    #print("Classifying {} annotated documents".format(len(docs)))
 
-    label.fn = fn
-    label.fp = fp
-    label.tp = tp
-    label.last_eval = datetime.datetime.now(tz=timezone.utc)
+    tokens = [get_tokens(model, project.id, doc) for doc in docs]
+    for doc, result in zip(docs, tc.pipe(tokens)):
+        for label, accept in gold[doc].items():
+            predict = result.cats[label] > .5
+            eval[label].add(accept, predict)
 
-    print("TP={l.tp} FP={l.fp} FN={l.fn} Pr={l.precision} Re={l.recall} F1={l.fscore}".format(l=label))
+    return eval.values()
 
-    print("Storing results")
-    label.save()
-    print("Done")
+
+
+
+def retrain(project: Project, iterations=10):
+    model = project.get_model()
+    print("Before", combine(evaluate(project)).eval_str())
+    annotations = list(Annotation.objects.filter(document__project_id=project.id, document__gold=False).values_list("id", flat=True))
+    print("Retraining model from ", len(annotations), "annotations")
+    labels = {l.id: l.label for l in project.label_set.all()}
+    with model.disable_pipes(*model.pipe_names[:-1]):
+        optimizer = model.begin_training()
+        for i in range(iterations):
+            losses = {}
+            for batch in tqdm(list(minibatch(annotations, size=compounding(4., 32., 1.001)))):
+                ann = list(Annotation.objects.filter(pk__in=batch).select_related("document").only("id", "accept", "label_id", "document__text"))
+                reset_queries()
+
+                batch_texts = [a.document.text for a in ann]
+                batch_annotations = [{'cats': {labels[a.label_id]: a.accept}} for a in ann]
+
+                model.update(batch_texts, batch_annotations, sgd=optimizer, drop=0.2, losses=losses)
+            print("Iteration ",i,  combine(evaluate(project, model)).eval_str())
+
+
+def get_tokens(model: Language, project_id: int, doc_id: int):
+    fn = os.path.join(settings.TOKEN_DIR, "project_{}".format(project_id), str(doc_id))
+    if not os.path.exists(fn):
+        raise ValueError("Document {self.id} has not been preprocessed ({fn} does not exist)".format(**locals()))
+    return Doc(model.vocab).from_disk(fn)

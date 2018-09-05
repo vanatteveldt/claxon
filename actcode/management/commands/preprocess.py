@@ -17,7 +17,7 @@ class Command(BaseCommand):
         project = Project.objects.get(pk=options['project_id'])
         dir = os.path.join(settings.TOKEN_DIR, "project_{}".format(project.id))
         os.makedirs(dir, exist_ok=True)
-        docids = set(project.document_set.filter(gold=False).values_list("id", flat=True))
+        docids = set(project.document_set.values_list("id", flat=True))
         preprocessed = {int(x) for x in os.listdir(dir)}
         todo = list(docids - preprocessed)
         if not todo:
