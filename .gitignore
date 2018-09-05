@@ -105,3 +105,4 @@ venv.bak/
 .Rproj.user
 
 .idea
+spacy_tokens

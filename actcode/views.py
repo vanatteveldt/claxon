@@ -49,19 +49,32 @@ class CodeView(TemplateView):
     def get(self, request, *args, **kwargs):
         if 'accept' in self.request.GET:
             doc = Document.objects.get(pk=int(self.request.GET['doc']))
-            Annotation.objects.create(document=doc, label_id=kwargs['label'], accept=self.request.GET['accept'])
+            try:
+                a = Annotation.objects.get(document=doc, label_id=kwargs['label'])
+            except Annotation.DoesNotExist:
+                Annotation.objects.create(document=doc, label_id=kwargs['label'], accept=self.request.GET['accept'])
+            else:
+                a.accept = self.request.GET['accept']
+                a.save()
 
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         kwargs = super().get_context_data(**kwargs)
-        done = {a.document_id for a in Annotation.objects.filter(document__gold=True, label=self.label, document__project_id=self.project.id)}
+
+        done = list(Annotation.objects.filter(document__gold=True, label=self.label, document__project_id=self.project.id)
+                    .select_related("document").only("document_id", "accept", "document__text").order_by("-id"))
+
         total = len(Document.objects.filter(gold=True, project_id=self.project.id))
         all_done = total <= len(done)
         percent = 100 * len(done) // total
         percent_w = 10 + 90 * len(done) // total
         if not all_done:
-            doc = self.project.document_set.filter(gold=True).exclude(pk__in=done)[0]
+            if 'next' in self.request.GET:
+                docid = int(self.request.GET['next'])
+                doc = self.project.document_set.get(gold=True, pk=docid)
+            else:
+                doc = self.project.document_set.filter(gold=True).exclude(pk__in={a.document_id for a in done})[0]
             text = doc.text.replace("\n", "<br/>")
             base_url = reverse("actcode:code-gold", kwargs=dict(project=self.project.id, label=self.label.id))
             accept_url = "{base_url}?doc={doc.id}&accept=1".format(**locals())

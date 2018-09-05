@@ -1,5 +1,7 @@
 {%  extends 'base.html' %}
 {%  block content %}
+    <div class="row">
+    <div class="col-md-9">
 
    <div class="progress">
   <div class="progress-bar progress-bar-striped bg-success progress-bar-success" role="progressbar" style="width: {{percent_w }}%;" aria-valuenow="{{ percent }}" aria-valuemin="0" aria-valuemax="100">
@@ -28,6 +30,17 @@ Done: {{ done|length }} / {{ total }}
 <br/>
     <div id="text" style="border:2px solid grey; padding:1em">{{ text|safe }}</div>
 {%  endif %}
+    </div>
+
+    <div class="col-md-3">
+        History:
+    <ul>
+        {%  for a in done %}
+            <li/><a class="{%  if a.accept %}accept{%  else %}reject{% endif %}" href="{{ base_url }}?next={{ a.document_id }}">{{ a.document.title}}</a>
+        {%  endfor %}
+    </ul>
+    </div>
+    </div>
 {%  endblock %}
 
 {%  block postscript %}

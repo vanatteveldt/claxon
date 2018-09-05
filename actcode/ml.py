@@ -52,7 +52,7 @@ class ActiveLearn:
         model = self._get_model()
         tc = model.get_pipe("textcat")
         docs = list(Document.objects.filter(pk__in=todo).only("id", "tokens"))
-        tokens = [Doc(model.vocab).from_bytes(doc.tokens) for doc in docs]
+        tokens = [Doc(model.vocab).from_disk(doc.tokens) for doc in docs]
         scores = [d.cats[label.label] for d in tc.pipe(tokens)]
         uncertainty = [abs(score - 0.5) for score in scores]
         index = list(argsort(uncertainty))[:n]

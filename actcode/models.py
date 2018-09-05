@@ -1,6 +1,9 @@
+import os
+
 import spacy
 from django.db import models
 from spacy.language import Language
+from django.conf import settings
 
 
 class Project(models.Model):
@@ -21,7 +24,16 @@ class Document(models.Model):
     text = models.TextField()
     gold = models.BooleanField()
     reference = models.TextField(null=True)
-    tokens = models.BinaryField(null=True)
+    title = models.TextField()
+
+    @property
+    def tokens(self):
+        fn = os.path.join(settings.TOKEN_DIR, "project_{}".format(self.project_id), self.id)
+        if not os.path.exists(fn):
+            raise Exception("Document {self.id} has not been preprocessed ({fn} does not exist)".format(**locals()))
+        return fn
+
+
 
 
 class Label(models.Model):
@@ -62,3 +74,6 @@ class Annotation(models.Model):
     document = models.ForeignKey(Document, models.CASCADE)
     label = models.ForeignKey(Label, models.CASCADE)
     accept = models.BooleanField()
+
+    class Meta:
+        unique_together = [("document", "label")]
