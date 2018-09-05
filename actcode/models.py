@@ -28,7 +28,7 @@ class Document(models.Model):
 
     @property
     def tokens(self):
-        fn = os.path.join(settings.TOKEN_DIR, "project_{}".format(self.project_id), self.id)
+        fn = os.path.join(settings.TOKEN_DIR, "project_{}".format(self.project_id), str(self.id))
         if not os.path.exists(fn):
             raise Exception("Document {self.id} has not been preprocessed ({fn} does not exist)".format(**locals()))
         return fn

@@ -15,7 +15,7 @@ class ActiveLearn:
     """
     Serializable class that remembers active learning state between HTTP sessions
     """
-    N_SAMPLE = 250
+    N_SAMPLE = 1000
     N_QUEUE = 10
 
     def __init__(self, label_id):
@@ -51,7 +51,7 @@ class ActiveLearn:
 
         model = self._get_model()
         tc = model.get_pipe("textcat")
-        docs = list(Document.objects.filter(pk__in=todo).only("id", "tokens"))
+        docs = list(Document.objects.filter(pk__in=todo).only("id"))
         tokens = [Doc(model.vocab).from_disk(doc.tokens) for doc in docs]
         scores = [d.cats[label.label] for d in tc.pipe(tokens)]
         uncertainty = [abs(score - 0.5) for score in scores]
