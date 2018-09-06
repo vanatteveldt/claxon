@@ -14,9 +14,6 @@ class Project(models.Model):
     model_task = models.TextField(null=True)
     model_location = models.TextField(null=True)
 
-    def get_model(self) -> Language:
-        model_name = self.base_model
-        return spacy.load(model_name)
 
 
 class Document(models.Model):
