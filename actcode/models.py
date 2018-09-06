@@ -1,9 +1,4 @@
-import os
-
-import spacy
 from django.db import models
-from spacy.language import Language
-from django.conf import settings
 
 
 class Project(models.Model):

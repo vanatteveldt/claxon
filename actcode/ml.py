@@ -1,6 +1,7 @@
 import datetime
 import os
 from random import sample
+from functools import lru_cache
 
 import spacy
 from django.conf import settings
@@ -104,71 +105,68 @@ class ActiveLearn:
         al.coded_docids = state["coded_docids"]
         return al
 
-def evaluate(project: Project, model):
+def evaluate(project: Project, model, annotations=None):
     """Evaluate a label based on the project's model and gold annotations"""
     tc = model.get_pipe("textcat")
     labels = {l.id: l.label for l in project.label_set.all()}
     eval = {label: Eval(label) for label in labels.values()}
 
     gold = {}  # doc.id : {label: T/F, ..}
-    for a in Annotation.objects.filter(document__gold=True, document__project=project):
+    if annotations is None:
+        annotations = Annotation.objects.filter(document__gold=True, document__project=project)
+    for a in annotations:
         gold.setdefault(a.document_id, {})[labels[a.label_id]] = a.accept
 
     docs = list(gold.keys())
     #print("Classifying {} annotated documents".format(len(docs)))
-
     tokens = [get_tokens(model, project.id, doc) for doc in docs]
     for doc, result in zip(docs, tc.pipe(tokens)):
         for label, accept in gold[doc].items():
             predict = result.cats[label] > .5
             eval[label].add(accept, predict)
-
     return eval.values()
-
-
 
 
 def retrain(project: Project, iterations=10):
     model = get_model(project)
     evals = evaluate(project, model)
-    if iterations:
-        print("Before", combine(evals).eval_str())
-        annotations = list(Annotation.objects.filter(document__project_id=project.id, document__gold=False).values_list("id", flat=True))
-        print("Retraining model from ", len(annotations), "annotations")
-        labels = {l.id: l.label for l in project.label_set.all()}
-        with model.disable_pipes(*model.pipe_names[:-1]):
-            optimizer = model.begin_training()
-            for i in range(iterations):
-                losses = {}
-                for batch in tqdm(list(minibatch(annotations, size=compounding(4., 32., 1.001)))):
-                    ann = list(Annotation.objects.filter(pk__in=batch).select_related("document").only("id", "accept", "label_id", "document__text"))
-                    reset_queries()
+    print("Before", combine(evals).eval_str())
 
-                    batch_texts = [a.document.text for a in ann]
-                    batch_annotations = [{'cats': {labels[a.label_id]: a.accept}} for a in ann]
+    annotations = list(Annotation.objects.filter(document__project_id=project.id, document__gold=False))
 
-                    model.update(batch_texts, batch_annotations, sgd=optimizer, drop=0.2, losses=losses)
-                evals = evaluate(project, model)
-                for eval in sorted(evals, key=lambda e: e.f):
-                    print(eval.eval_str())
-                print(combine(evals).eval_str())
+    print("Retraining model from ", len(annotations), "annotations")
+    labels = {l.id: l.label for l in project.label_set.all()}
+    with model.disable_pipes(*model.pipe_names[:-1]):
+        optimizer = model.begin_training()
+        for i in range(iterations):
+            losses = {}
+            for batch in tqdm(list(minibatch(annotations, size=compounding(4., 32., 1.001)))):
+                texts = dict(Document.objects.filter(pk__in={a.document_id for a in batch}).values_list("id", "text"))
 
-        print()
-    for eval in sorted(evals, key=lambda e: e.f):
-        print(eval.eval_str())
-    print(combine(evals).eval_str())
+                batch_texts = [texts[a.document_id] for a in batch]
+                batch_annotations = [{'cats': {labels[a.label_id]: a.accept}} for a in batch]
+
+                model.update(batch_texts, batch_annotations, sgd=optimizer, drop=0.2, losses=losses)
+            evals = evaluate(project, model)
+            for eval in sorted(evals, key=lambda e: e.f):
+                print(eval.eval_str())
+            print(combine(evals).eval_str())
+            evals_t = evaluate(project, model, annotations)
+            print("Training:", combine(evals_t).eval_str())
 
 
 
+@lru_cache(maxsize=2048)
 def get_tokens(model: Language, project_id: int, doc_id: int):
     fn = os.path.join(settings.TOKEN_DIR, "project_{}".format(project_id), str(doc_id))
     if not os.path.exists(fn):
         raise ValueError("Document {self.id} has not been preprocessed ({fn} does not exist)".format(**locals()))
     return Doc(model.vocab).from_disk(fn)
 
+
 def get_model(project: Project) -> Language:
     model_name = project.base_model
-    model_name = 'nl_core_news_sm'
+    #model_name = 'nl_core_news_sm'
     model = spacy.load(model_name)
     if 'textcat' not in model.pipe_names:
         textcat = model.create_pipe('textcat')
