@@ -1,4 +1,6 @@
 import datetime
+import json
+import logging
 import os
 from random import sample
 from functools import lru_cache
@@ -47,7 +49,7 @@ class ActiveLearn:
 
     def _populate_todo(self, n=5):
         """Populate the queue of documents to code"""
-        print("Populating active learning todo, n=", n)
+        logging.info("Populating active learning todo, n={n}".format(**locals()))
         label = Label.objects.get(pk=self.label_id)
 
         done = {a.document_id for a in Annotation.objects.filter(document__gold=False, label=label,
@@ -56,25 +58,24 @@ class ActiveLearn:
         if len(todo) > self.N_SAMPLE:
             todo = sample(todo, self.N_SAMPLE)
 
-        model = self._get_model()
+        model = self._get_updated_model()
         tc = model.get_pipe("textcat")
-        docs = list(Document.objects.filter(pk__in=todo).only("id"))
-        tokens = [Doc(model.vocab).from_disk(doc.tokens) for doc in docs]
+        docids = list(Document.objects.filter(pk__in=todo).values_list("id", flat=True))
+        tokens = [get_tokens(model, label.project_id, doc_id) for doc_id in docids]
         scores = [d.cats[label.label] for d in tc.pipe(tokens)]
         uncertainty = [abs(score - 0.5) for score in scores]
         index = list(argsort(uncertainty))[:n]
 
-        self.todo_docids = [docs[i].id for i in index]
+        self.todo_docids = [docids[i] for i in index]
         self.todo_scores = [scores[i] for i in index]
-        print("Done, |todo|=", len(self.todo_docids))
+        logging.info("Populating done, |todo|={}".format(len(self.todo_docids)))
 
-    def _get_model(self):
+    def _get_updated_model(self):
         """Get the classifier, updating if needed with coded documents"""
         label = Label.objects.get(pk=self.label_id)
-        model = label.project.get_model()
+        model = get_model(label.project)
         if self.coded_docids:
-            print("Updating model with ", len(self.coded_docids), "docs")
-            print(model.pipe_names[:-1])
+            logging.info("Updating model with {} docs".format(len(self.coded_docids)))
             # we have some documents, so let's update the model
             with model.disable_pipes(*model.pipe_names[:-1]):
                 optimizer = model.begin_training()
@@ -86,7 +87,6 @@ class ActiveLearn:
                     for doc in Document.objects.filter(pk__in=batch).only("id", "text"):
                         texts.append(doc.text)
                         annotations.append({'cats': {label.label: ann[doc.id].accept}})
-                    print(annotations)
                     model.update(texts, annotations, sgd=optimizer, drop=0.2, losses=losses)
         return model
 
@@ -118,7 +118,6 @@ def evaluate(project: Project, model, annotations=None):
         gold.setdefault(a.document_id, {})[labels[a.label_id]] = a.accept
 
     docs = list(gold.keys())
-    #print("Classifying {} annotated documents".format(len(docs)))
     tokens = [get_tokens(model, project.id, doc) for doc in docs]
     for doc, result in zip(docs, tc.pipe(tokens)):
         for label, accept in gold[doc].items():
@@ -128,13 +127,12 @@ def evaluate(project: Project, model, annotations=None):
 
 
 def retrain(project: Project, iterations=10):
-    model = get_model(project)
-    evals = evaluate(project, model)
-    print("Before", combine(evals).eval_str())
-
+    model = get_base_model(project)
     annotations = list(Annotation.objects.filter(document__project_id=project.id, document__gold=False))
 
-    print("Retraining model from ", len(annotations), "annotations")
+    train_eval = sample(annotations, 500) if len(annotations) > 500 else annotations
+
+    logging.info("Retraining model using {} annotations".format(len(annotations)))
     labels = {l.id: l.label for l in project.label_set.all()}
     with model.disable_pipes(*model.pipe_names[:-1]):
         optimizer = model.begin_training()
@@ -148,27 +146,39 @@ def retrain(project: Project, iterations=10):
 
                 model.update(batch_texts, batch_annotations, sgd=optimizer, drop=0.2, losses=losses)
             evals = evaluate(project, model)
-            for eval in sorted(evals, key=lambda e: e.f):
-                print(eval.eval_str())
-            print(combine(evals).eval_str())
-            evals_t = evaluate(project, model, annotations)
-            print("Training:", combine(evals_t).eval_str())
+            evals_t = evaluate(project, model, train_eval)
+            logging.info("It.{:2}: {} (train: {})".format(i, combine(evals).eval_str(label=""), combine(evals_t).eval_str(label="")))
 
+    output_dir = os.path.join(settings.MODEL_DIR, "project_{}_{}".format(project.id, datetime.datetime.now().isoformat()))
+    logging.debug("Saving model to {}...".format(output_dir))
 
+    model.to_disk(output_dir)
+    project.last_model = datetime.datetime.now()
+    project.model_location = output_dir
+    project.model_evaluation = json.dumps([e.to_dict() for e in evals])
+    project.save()
+    logging.info("Saved model to {}".format(output_dir))
 
 @lru_cache(maxsize=2048)
 def get_tokens(model: Language, project_id: int, doc_id: int):
     fn = os.path.join(settings.TOKEN_DIR, "project_{}".format(project_id), str(doc_id))
     if not os.path.exists(fn):
-        raise ValueError("Document {self.id} has not been preprocessed ({fn} does not exist)".format(**locals()))
+        raise ValueError("Document {doc_id} has not been preprocessed ({fn} does not exist)".format(**locals()))
     return Doc(model.vocab).from_disk(fn)
 
 
 def get_model(project: Project) -> Language:
-    model_name = project.base_model
-    #model_name = 'nl_core_news_sm'
+    model_name = project.model_location or project.base_model
+    return _get_model(model_name, project)
+
+def get_base_model(project: Project) -> Language:
+    return _get_model(project.base_model, project)
+
+def _get_model(model_name: str, project: Project) -> Language:
+    logging.info("Loading model from {}".format( model_name))
     model = spacy.load(model_name)
     if 'textcat' not in model.pipe_names:
+        logging.info(".. adding textcat pipe")
         textcat = model.create_pipe('textcat')
         model.add_pipe(textcat, last=True)
         for label in project.label_set.values_list("label", flat=True):

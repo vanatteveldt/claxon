@@ -1,10 +1,10 @@
 class Eval:
-    def __init__(self, label):
+    def __init__(self, label, tp=0, fp=0, fn=0, tn=0):
         self.label = label
-        self.tp = 0
-        self.fp = 0
-        self.fn = 0
-        self.tn = 0
+        self.tp = tp
+        self.fp = tp
+        self.fn = fn
+        self.tn = tn
 
     def add(self, gold, predicted):
         if gold and predicted: self.tp += 1
@@ -34,9 +34,27 @@ class Eval:
             return self.pr
         return (2 * self.pr * self.re) / (self.pr + self.re)
 
-    def eval_str(self):
-        return "{self.label:15s} Pr:{self.pr:.2f} Re:{self.re:.2f} F1:{self.f:.2f}".format(**locals())
+    def eval_str(self, label=None, fill_label=None):
+        if label is None:
+            label = self.label
+        if fill_label:
+            label += " "*(fill_label - len(label))
+        if label:
+            label += " "
+        return "{label}Pr:{self.pr:.2f} Re:{self.re:.2f} F1:{self.f:.2f}".format(**locals())
 
+    def __str__(self):
+        return "[{}]".format(self.eval_str())
+
+    def __repr__(self):
+        return "Eval(label={self.label}, ...)".format(**locals())
+
+    def to_dict(self):
+        return self.__dict__
+
+    @classmethod
+    def from_dict(cls, d):
+        return Eval(**d)
 
 def combine(evals, label="Total") -> Eval:
     result = Eval(label)

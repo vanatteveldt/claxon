@@ -5,11 +5,9 @@ class Project(models.Model):
     name = models.TextField()
     base_model = models.TextField()
 
-    last_model = models.DateTimeField(null=True)
-    model_task = models.TextField(null=True)
+    model_timestamp = models.DateTimeField(null=True)
     model_location = models.TextField(null=True)
-
-
+    model_evaluation = models.TextField(null=True)
 
 class Document(models.Model):
     project = models.ForeignKey(Project, models.CASCADE)
@@ -22,14 +20,6 @@ class Document(models.Model):
 class Label(models.Model):
     project = models.ForeignKey(Project, models.CASCADE)
     label = models.TextField()
-
-    last_eval = models.DateTimeField(null=True)
-    eval_task = models.TextField(null=True)
-    tp = models.IntegerField(null=True)
-    fn = models.IntegerField(null=True)
-    fp = models.IntegerField(null=True)
-
-
 
     def __str__(self):
         return self.label

@@ -5,6 +5,7 @@
 Base model: {{ view.project.base_model }}
 #Documents (training): {{ ntrain_total }}
 #Documents (evaluation): {{ ngold_total }}
+Trained model: {{ view.project.model_location }} ({{ view.project.model_timestamp|date:"c" }})
 </pre>
 
 <table class="table table-hover">
@@ -23,13 +24,12 @@ Base model: {{ view.project.base_model }}
             <td>{{ l.label.label }}</td>
             <td>{{ l.ngold }}</td>
             <td>{{ l.ntrain }}</td>
-            <td>{{ l.label.precision | floatformat:2}}</td>
-            <td>{{ l.label.recall | floatformat:2}}</td>
-            <td>{{ l.label.fscore | floatformat:2}}</td>
+            <td>{{ l.pr | floatformat:2}}</td>
+            <td>{{ l.re | floatformat:2}}</td>
+            <td>{{ l.f1 | floatformat:2}}</td>
             <td>
                 [<a href="{% url 'actcode:code-learn' project=view.project.id label=l.label.id %}">Train</a>] |
-                [<a href="{% url 'actcode:code-gold' project=view.project.id label=l.label.id %}">Evaluate</a>] |
-                [Trigger]
+                [<a href="{% url 'actcode:code-gold' project=view.project.id label=l.label.id %}">Evaluate</a>]
             </td>
         </tr>
     {%  endfor %}

@@ -1,7 +1,11 @@
+import json
+import logging
+
 from django.db.models import Count
 from django.urls import reverse
 from django.views.generic import TemplateView
 
+from actcode.eval import Eval
 from actcode.ml import ActiveLearn
 from actcode.models import Project, Annotation, Label, Document
 
@@ -25,13 +29,24 @@ class ProjectView(TemplateView):
     def get_context_data(self, **kwargs):
         kwargs = super().get_context_data(**kwargs)
 
+
         labelstats = {l.id: dict(label=l) for l in self.project.label_set.all()}
         for a in Annotation.objects.filter(document__project=self.project.id).values("document__gold", "label",).annotate(n=Count('id')):
             key = 'ngold' if a['document__gold'] else 'ntrain'
             labelstats[a['label']][key] = a['n']
+
+        if self.project.model_evaluation:
+            labels = {l['label'].label: id for (id, l) in labelstats.items()}
+            for eval in [Eval.from_dict(x) for x in json.loads(self.project.model_evaluation)]:
+                d = labelstats[labels[eval.label]]
+                d["f1"] = eval.f
+                d["pr"] = eval.pr
+                d["re"] = eval.re
+
         kwargs['ngold_total'] = self.project.document_set.filter(gold=True).count()
         kwargs['ntrain_total'] = self.project.document_set.filter(gold=False).count()
         kwargs['labelstats'] = sorted(labelstats.values(), key=lambda l:l['label'].label)
+
         return kwargs
 
 
