@@ -1,13 +1,17 @@
 import json
 import logging
+import re
 
+from django import forms
+from django.core.exceptions import ValidationError
 from django.db.models import Count
+from django.shortcuts import redirect
 from django.urls import reverse
-from django.views.generic import TemplateView
+from django.views.generic import TemplateView, FormView
 
 from actcode.eval import Eval
 from actcode.ml import ActiveLearn
-from actcode.models import Project, Annotation, Label, Document
+from actcode.models import Project, Annotation, Label, Document, Session
 
 
 class ProjectListView(TemplateView):
@@ -113,12 +117,19 @@ class ActiveCodeView(TemplateView):
         if state:
             self.state = ActiveLearn.from_dict(state)
         else:
-            self.state = ActiveLearn(self.label.id)
+            session = Session.objects.create(project=self.project, train=True, description="Online active learning")
+            self.state = ActiveLearn(self.label.id, session.id)
 
         if 'accept' in self.request.GET:
             doc = Document.objects.get(pk=int(self.request.GET['doc']))
-            Annotation.objects.create(document=doc, label_id=kwargs['label'], accept=self.request.GET['accept'])
-            self.state.done(doc.id)
+            try:
+                a = Annotation.objects.get(document=doc, label_id=kwargs['label'])
+            except Annotation.DoesNotExist:
+                Annotation.objects.create(document=doc, label_id=kwargs['label'], accept=self.request.GET['accept'],
+                                          session_id=self.state.session_id)
+            else:
+                a.accept = self.request.GET['accept']
+                a.save()
 
         result = super().get(request, *args, **kwargs)
         self.request.session[CACHE_KEY] = self.state.to_dict()
@@ -127,8 +138,19 @@ class ActiveCodeView(TemplateView):
 
     def get_context_data(self, **kwargs):
         kwargs = super().get_context_data(**kwargs)
-        doc, score = self.state.get_doc()
+
+        done = Annotation.objects.filter(session_id=self.state.session_id)
+
+        if 'next' in self.request.GET:
+            docid = int(self.request.GET['next'])
+            doc = self.project.document_set.get(pk=docid)
+        else:
+            doc = self.state.get_doc()
+        score = self.state.scores.get(doc.id)
+        ntodo = len(self.state.get_todo())
         text = doc.text.replace("\n", "<br/>")
+        if self.state.query:
+            text = re.sub("({})".format(self.state.query), "<b>\\1</b>", text, flags=re.I)
         base_url = reverse("actcode:code-learn",  kwargs=dict(project=self.project.id, label=self.label.id))
         accept_url = "{base_url}?doc={doc.id}&accept=1".format(**locals())
         reject_url = "{base_url}?doc={doc.id}&accept=0".format(**locals())
@@ -137,3 +159,34 @@ class ActiveCodeView(TemplateView):
         return kwargs
 
 
+class FilterForm(forms.Form):
+    query = forms.CharField()
+
+
+class FilterView(FormView):
+    template_name = "filter.html"
+    form_class = FilterForm
+
+    def form_valid(self, form):
+        q = form.cleaned_data['query']
+        pid = self.kwargs['project']
+        lid = self.kwargs['label']
+        done = set(Annotation.objects.filter(document__project__id=pid, document__gold=False, label=lid)
+                   .order_by("document_id").distinct().values_list("document_id",flat=True))
+        self.n = Document.objects.filter(gold=False, project_id=self.kwargs['project']).exclude(pk__in=done).filter(text__icontains=q).count()
+        if 'check' in self.request.POST:
+            return self.form_invalid(form)
+        if self.n == 0:
+            form.add_error(field=None, error="No documents found for query")
+            return self.form_invalid(form)
+
+        session = Session.objects.create(project_id=pid, train=True,
+                                         description="Online active learning with query: {}".format(q))
+        state = ActiveLearn(lid, session.id, query=q)
+        CACHE_KEY = _AC_CACHE_KEY.format(label=lid)
+        self.request.session[CACHE_KEY] = state.to_dict()
+        return redirect('actcode:code-learn', label=lid, project=pid)
+
+    def get_context_data(self, **kwargs):
+        kwargs['n'] = getattr(self, "n", None)
+        return super().get_context_data(**kwargs)

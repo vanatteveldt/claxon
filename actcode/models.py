@@ -1,3 +1,5 @@
+import datetime
+
 from django.db import models
 
 
@@ -17,6 +19,12 @@ class Document(models.Model):
     title = models.TextField()
 
 
+class Session(models.Model):
+    project = models.ForeignKey(Project, models.CASCADE)
+    train = models.BooleanField()
+    start_date = models.DateTimeField(default=datetime.datetime.now)
+    description = models.TextField()
+
 class Label(models.Model):
     project = models.ForeignKey(Project, models.CASCADE)
     label = models.TextField()
@@ -24,8 +32,8 @@ class Label(models.Model):
     def __str__(self):
         return self.label
 
-
 class Annotation(models.Model):
+    session = models.ForeignKey(Session, models.CASCADE)
     document = models.ForeignKey(Document, models.CASCADE)
     label = models.ForeignKey(Label, models.CASCADE)
     accept = models.BooleanField()

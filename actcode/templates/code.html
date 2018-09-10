@@ -14,8 +14,9 @@
 Project: <a href="{%  url 'actcode:project' project=view.project.id %}">{{ view.project.id}}: {{ view.project.name }}</a>
 Coding label: {{ view.label.label }}
     {% if state %}
-This session: {{ state.coded_docids | length }} coded, {{ state.todo_docids | length }} in queue
-Document: {{ doc.id }} (score: {{ score }})
+This session: {{ ntodo }} in queue
+Document: {{ doc.id }} (score: {{ score| floatformat:2 }})
+Query: {{ state.query }}
     {%  else %}
 Done: {{ done|length }} / {{ total }}
 {%  endif %}

@@ -17,7 +17,7 @@ from tqdm import tqdm
 from spacy.language import Language
 
 from actcode.eval import Eval, combine
-from actcode.models import Label, Annotation, Document, Project
+from actcode.models import Label, Annotation, Document, Project, Session
 
 
 class ActiveLearn:
@@ -27,25 +27,26 @@ class ActiveLearn:
     N_SAMPLE = 1000
     N_QUEUE = 10
 
-    def __init__(self, label_id):
+    def __init__(self, label_id, session_id, query=None):
         self.label_id = label_id
-        self.coded_docids = []
+        self.session_id = session_id
+        self.query = query
         self.todo_docids = []
-        self.todo_scores = []
+        self.scores = {}
 
-    def done(self, doc_id):
-        """Signify that this document is done and can be removed fromt the queue"""
-        if(doc_id != self.todo_docids[0]):
-            raise ValueError("doc_id {doc_id} is not the first todo ({self.todo_docids})")
-        self.coded_docids.append(doc_id)
-        self.todo_docids.pop(0)
-        self.todo_scores.pop(0)
+    def get_todo(self):
+        done = set(Annotation.objects.filter(session_id=self.session_id).values_list("document_id", flat=True))
+        return [id for id in self.todo_docids if id not in done]
 
     def get_doc(self):
         """Get the next document to annotate (and score)"""
-        if not self.todo_docids:
+        todo = self.get_todo()
+        if not todo:
             self._populate_todo(n=self.N_QUEUE)
-        return Document.objects.get(pk=self.todo_docids[0]), self.todo_scores[0]
+            if not self.todo_docids:
+                raise ValueError("Done! Sorry for not handling this properly")
+            return self.get_doc()
+        return Document.objects.get(pk=todo[0])
 
     def _populate_todo(self, n=5):
         """Populate the queue of documents to code"""
@@ -54,7 +55,11 @@ class ActiveLearn:
 
         done = {a.document_id for a in Annotation.objects.filter(document__gold=False, label=label,
                                                                  document__project_id=label.project_id)}
-        todo = list(Document.objects.filter(project=label.project, gold=False).exclude(pk__in=done).values_list("id", flat=True))
+        todo = Document.objects.filter(project=label.project, gold=False).exclude(pk__in=done)
+        if self.query:
+            todo = todo.filter(text__icontains=self.query)
+        todo = list(todo.values_list("id", flat=True))
+        logging.debug("{} documents in todo".format(len(todo)))
         if len(todo) > self.N_SAMPLE:
             todo = sample(todo, self.N_SAMPLE)
 
@@ -67,42 +72,41 @@ class ActiveLearn:
         index = list(argsort(uncertainty))[:n]
 
         self.todo_docids = [docids[i] for i in index]
-        self.todo_scores = [scores[i] for i in index]
+        self.scores.update({docids[i]: scores[i] for i in index})
         logging.info("Populating done, |todo|={}".format(len(self.todo_docids)))
 
     def _get_updated_model(self):
         """Get the classifier, updating if needed with coded documents"""
         label = Label.objects.get(pk=self.label_id)
         model = get_model(label.project)
-        if self.coded_docids:
-            logging.info("Updating model with {} docs".format(len(self.coded_docids)))
+        ann = list(Annotation.objects.filter(session_id=self.session_id)
+                       .select_related("document").only("accept", "document__text"))
+        if ann:
+            logging.info("Updating model with {} annotations".format(len(ann)))
             # we have some documents, so let's update the model
             with model.disable_pipes(*model.pipe_names[:-1]):
                 optimizer = model.begin_training()
                 losses = {}
-                for batch in minibatch(self.coded_docids, size=compounding(4., 32., 1.001)):
-                    ann = {a.document_id: a for a in Annotation.objects.filter(label=label, document__id__in=batch)}
-                    texts = []
-                    annotations = []
-                    for doc in Document.objects.filter(pk__in=batch).only("id", "text"):
-                        texts.append(doc.text)
-                        annotations.append({'cats': {label.label: ann[doc.id].accept}})
+                for batch in minibatch(ann, size=compounding(4., 32., 1.001)):
+                    texts = [a.document.text for a in ann]
+                    annotations = [{'cats': {label.label: a.accept}} for a in ann]
                     model.update(texts, annotations, sgd=optimizer, drop=0.2, losses=losses)
         return model
 
     def to_dict(self):
         """Serialize"""
         return dict(label_id=self.label_id,
-                    coded_docids=self.coded_docids, todo_docids=self.todo_docids,
-                    todo_scores=self.todo_scores)
+                    session_id=self.session_id,
+                    todo_docids=self.todo_docids,
+                    scores=self.scores,
+                    query=self.query)
 
     @classmethod
     def from_dict(cls, state):
         """Deserialize"""
-        al = cls(label_id=state["label_id"])
-        al.todo_scores = state["todo_scores"]
+        al = cls(label_id=state["label_id"], session_id=state["session_id"], query=state["query"])
+        al.scores = {int(id): s for (id, s) in state["scores"].items()}
         al.todo_docids = state["todo_docids"]
-        al.coded_docids = state["coded_docids"]
         return al
 
 def evaluate(project: Project, model, annotations=None):

@@ -1,0 +1,14 @@
+{%  extends 'base.html' %}
+{% block content %}
+
+
+<form method="post">
+{% csrf_token %}
+    {{ form.as_p }}
+
+    <input type="submit" name="check" value="Check N">
+    <input type="submit" name="go" value="Start Coding">
+</form>
+
+    {% if n is not None %} # documents: {{ n }} {% endif %}
+{% endblock %}
