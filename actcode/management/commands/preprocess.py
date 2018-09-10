@@ -2,6 +2,8 @@ import os
 
 from tqdm import tqdm
 from django.core.management.base import BaseCommand
+
+from actcode.ml import get_model
 from actcode.models import Project, Document
 from django.conf import settings
 
@@ -24,7 +26,7 @@ class Command(BaseCommand):
             print("All documents already preprocessed")
             return
         print("Preprocessing {} documents".format(len(todo)))
-        m = project.get_model()
+        m = get_model(project)
         chunks = [todo[i:i+_CHUNK_SIZE] for i in range(0, len(todo), _CHUNK_SIZE)]
         for chunk in tqdm(chunks):
             docs = list(Document.objects.filter(pk__in=chunk))
