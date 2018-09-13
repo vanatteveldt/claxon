@@ -42,6 +42,8 @@ class ProjectView(TemplateView):
         if self.project.model_evaluation:
             labels = {l['label'].label: id for (id, l) in labelstats.items()}
             for eval in [Eval.from_dict(x) for x in json.loads(self.project.model_evaluation)]:
+                if eval.label not in labels:
+                    continue
                 d = labelstats[labels[eval.label]]
                 d["f1"] = eval.f
                 d["pr"] = eval.pr

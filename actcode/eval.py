@@ -2,7 +2,7 @@ class Eval:
     def __init__(self, label, tp=0, fp=0, fn=0, tn=0):
         self.label = label
         self.tp = tp
-        self.fp = tp
+        self.fp = fp
         self.fn = fn
         self.tn = tn
 
