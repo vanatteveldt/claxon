@@ -1,31 +1,29 @@
-import datetime
 import json
 import logging
 import os
-from random import sample
+import shutil
+from collections import OrderedDict
 from functools import lru_cache
+from random import sample
 
 import spacy
 from django.conf import settings
-from django.db import connection, reset_queries
-from django.utils import timezone
+from huey.contrib import djhuey
 from numpy import argsort
+from spacy.language import Language
 from spacy.tokens.doc import Doc
 from spacy.util import minibatch, compounding
 from tqdm import tqdm
 
-from spacy.language import Language
-
+from actcode import tasks
 from actcode.eval import Eval, combine
-from actcode.models import Label, Annotation, Document, Project, Session
+from actcode.models import Annotation, Document, Project, Session
 
 
 class ActiveLearn:
     """
     Serializable class that remembers active learning state between HTTP sessions
     """
-    N_SAMPLE = 1000
-    N_QUEUE = 10
 
     def __init__(self, session):
         self.session = session
@@ -51,43 +49,46 @@ class ActiveLearn:
         done = set(self.session.annotation_set.values_list("document_id", flat=True))
         return [id for id in self.todo_docids if id not in done]
 
-    def get_doc(self):
+    def get_doc(self, trigger=None):
         """Get the next document to annotate (and score)"""
         todo = self.get_todo()
         if not todo:
-            self._populate_todo(n=self.N_QUEUE)
-            if not self.todo_docids:
-                raise ValueError("Done! Sorry for not handling this properly")
+            self._populate_todo(n=settings.N_QUEUE)
             return self.get_doc()
+        if trigger and len(todo) <= trigger and not self.session.populate_task_id:
+            logging.info("Triggering background populate")
+            res = tasks.populate_todo(self.session.id, n=settings.N_QUEUE)
+            self.session.populate_task_id = res.task.task_id
+            self.session.save()
         return Document.objects.get(pk=todo[0])
 
-    def _populate_todo(self, n=5):
-        """Populate the queue of documents to code"""
+    def _populate_todo(self, n):
+        task_id = self.session.populate_task_id
+        if task_id:
+            logging.info("Waiting for populate task {task_id}".format(**locals()))
+            scores = djhuey.HUEY.result(task_id, blocking=True)
+        else:
+            logging.info("Doing synchronous populate")
+            scores = self.do_populate_todo(n)
+        if not scores:
+            raise Exception("This session is done! Wouter is working on a nicer screen (with a cake)")
+
+    def do_populate_todo(self, n):
         logging.info("Populating active learning todo, n={n}".format(**locals()))
-        done = {a.document_id for a in Annotation.objects.filter(document__gold=False, label=self.session.label,
-                                                                 document__project=self.session.project)}
-        todo = Document.objects.filter(project=self.session.project, gold=False).exclude(pk__in=done)
-        if self.session.query:
-            todo = todo.filter(text__icontains=self.session.query)
-        todo = list(todo.values_list("id", flat=True))
-        logging.debug("{ntodo} documents in todo (query: {q}, done={ndone})"
-                      .format(ntodo=len(todo), ndone=len(done), q=self.session.query))
-        if len(todo) > self.N_SAMPLE:
-            todo = sample(todo, self.N_SAMPLE)
-
         model, is_updated = self._get_updated_model()
-        tc = model.get_pipe("textcat")
+        scores = get_todo(self.session, model, n)
+        self.todo_docids = list(scores.keys())
+        self.scores.update(scores)
 
-        tokens = [get_tokens(model, self.session.project_id, doc_id) for doc_id in todo]
-        scores = [d.cats[self.session.label.label] for d in tc.pipe(tokens)]
-        uncertainty = [abs(score - 0.5) for score in scores]
-        index = list(argsort(uncertainty))[:n]
+        if not scores:
+            logging.info("Session {self.session.id} done!".format(**locals()))
+            delete_session_model(self.session)
+            model = None
 
-        self.todo_docids = [todo[i] for i in index]
-        self.scores.update({todo[i]: scores[i] for i in index})
         logging.debug("Saving state")
         self._save_state(model=(model if is_updated else None))
         logging.info("Populating done, |todo|={}".format(len(self.todo_docids)))
+        return scores
 
     def _get_updated_model(self):
         """Get the classifier, updating if needed with coded documents since last update"""
@@ -114,6 +115,29 @@ class ActiveLearn:
         else:
             is_updated = False
         return model, is_updated
+
+
+def get_todo(session: Session, model: Language, n=10) -> OrderedDict:
+    """Populate the queue of documents to code"""
+    done = {a.document_id for a in Annotation.objects.filter(document__gold=False, label=session.label,
+                                                             document__project=session.project)}
+    todo = Document.objects.filter(project=session.project, gold=False).exclude(pk__in=done)
+    if session.query:
+        todo = todo.filter(text__icontains=session.query)
+    todo = list(todo.values_list("id", flat=True))
+    logging.debug("{ntodo} documents in todo (query: {q}, done={ndone})"
+                  .format(ntodo=len(todo), ndone=len(done), q=session.query))
+    if len(todo) > settings.N_SAMPLE:
+        todo = sample(todo, settings.N_SAMPLE)
+
+    tc = model.get_pipe("textcat")
+    tokens = [get_tokens(model, session.project_id, doc_id) for doc_id in todo]
+    scores = [d.cats[session.label.label] for d in tc.pipe(tokens)]
+    uncertainty = [abs(score - 0.5) for score in scores]
+    index = list(argsort(uncertainty))[:n]
+
+    return OrderedDict((todo[i], scores[i]) for i in index)
+
 
 
 def retrain(project: Project, iterations=10):
@@ -197,6 +221,12 @@ def get_session_model(session: Session) -> Language:
         return _get_model(model_dir, session.project)
     else:
         logging.debug("Model not found: {model_dir}".format(**locals()))
+
+
+def delete_session_model(session: Session):
+    model_dir = get_model_dir(session=session)
+    logging.debug("Deleting model {model_dir}".format(**locals()))
+    shutil.rmtree(model_dir)
 
 
 def get_base_model(project: Project) -> Language:

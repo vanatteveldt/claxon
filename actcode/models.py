@@ -31,6 +31,7 @@ class Session(models.Model):
     description = models.TextField()
     query = models.TextField(null=True)
     state = models.TextField(null=True)
+    populate_task_id = models.TextField(null=True)
 
 class Annotation(models.Model):
     session = models.ForeignKey(Session, models.CASCADE)

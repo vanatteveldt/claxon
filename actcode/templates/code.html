@@ -17,6 +17,7 @@ Coding label: {{ view.label.label }}
 Active learning session {{ state.session.id }}, {{ ntodo }} left in queue
 Document: {{ doc.id }} (score: {{ score| floatformat:2 }})
 Query: {{ state.session.query }}
+Todo triggered? {{  state.session.populate_task_id }}
     {%  else %}
 Done: {{ done|length }} / {{ total }}
 {%  endif %}

@@ -15,8 +15,14 @@ import os
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# Claxon settings
+
 TOKEN_DIR = os.path.join(BASE_DIR, "tmp/tokens")
 MODEL_DIR = os.path.join(BASE_DIR, "tmp/models")
+
+N_SAMPLE = 500
+N_QUEUE = 25
+N_TRIGGER = 20
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/2.1/howto/deployment/checklist/
@@ -25,10 +31,10 @@ MODEL_DIR = os.path.join(BASE_DIR, "tmp/models")
 SECRET_KEY = 'lk$1xxf%v=^a9%riv_7%=ki*%ymskid*+)wnr5a%wj0z3)a+(u'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get("DJANGO_DEBUG", "Y") == "Y"
+LOG_LEVEL = os.environ.get("DJANGO_LOG_LEVEL", ("DEBUG" if DEBUG else "INFO"))
 
-ALLOWED_HOSTS = []
-
+ALLOWED_HOSTS = ["localhost"]
 
 # Application definition
 
@@ -39,6 +45,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'huey.contrib.djhuey',
     'actcode'
 ]
 
@@ -116,6 +123,7 @@ USE_L10N = True
 
 USE_TZ = False
 
+HUEY = {'consumer': {'max_delay': 0.5}}
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/2.1/howto/static-files/
@@ -140,7 +148,11 @@ LOGGING = {
     'loggers': {
         '': {
             'handlers': ['console'],
-            'level': os.getenv('DJANGO_LOG_LEVEL', 'DEBUG'),
+            'level': LOG_LEVEL,
+        },
+        'huey': {
+            'handlers': ['console'],
+            'level': 'INFO',
         },
     },
     'formatters': {

@@ -3,12 +3,14 @@ import logging
 import re
 
 from django import forms
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db.models import Count
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.views.generic import TemplateView, FormView, RedirectView
 
+from actcode import tasks
 from actcode.eval import Eval
 from actcode.ml import ActiveLearn
 from actcode.models import Project, Annotation, Label, Document, Session
@@ -32,7 +34,6 @@ class ProjectView(TemplateView):
 
     def get_context_data(self, **kwargs):
         kwargs = super().get_context_data(**kwargs)
-
 
         labelstats = {l.id: dict(label=l) for l in self.project.label_set.all()}
         for a in Annotation.objects.filter(document__project=self.project.id).values("document__gold", "label",).annotate(n=Count('id')):
@@ -105,7 +106,6 @@ class CodeView(TemplateView):
         return kwargs
 
 
-_AC_CACHE_KEY = "actcode_active_state_{label}"
 class ActiveCodeView(TemplateView):
     template_name = "code.html"
 
@@ -137,7 +137,7 @@ class ActiveCodeView(TemplateView):
             docid = int(self.request.GET['next'])
             doc = self.project.document_set.get(pk=docid)
         else:
-            doc = self.state.get_doc()
+            doc = self.state.get_doc(trigger=settings.N_TRIGGER)
         score = self.state.scores.get(doc.id)
         ntodo = len(self.state.get_todo())
         text = doc.text.replace("\n", "<br/>")
