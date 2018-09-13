@@ -27,15 +27,14 @@ class ActiveLearn:
     N_SAMPLE = 1000
     N_QUEUE = 10
 
-    def __init__(self, label_id, session_id, query=None):
-        self.label_id = label_id
-        self.session_id = session_id
-        self.query = query
-        self.todo_docids = []
-        self.scores = {}
+    def __init__(self, session):
+        self.session = session
+        state = json.loads(session.state) if session.state else {}
+        self.todo_docids = state.get('docids', [])
+        self.scores = state.get('scores', {})
 
     def get_todo(self):
-        done = set(Annotation.objects.filter(session_id=self.session_id).values_list("document_id", flat=True))
+        done = set(self.session.annotation_set.values_list("document_id", flat=True))
         return [id for id in self.todo_docids if id not in done]
 
     def get_doc(self):
@@ -51,29 +50,35 @@ class ActiveLearn:
     def _populate_todo(self, n=5):
         """Populate the queue of documents to code"""
         logging.info("Populating active learning todo, n={n}".format(**locals()))
-        label = Label.objects.get(pk=self.label_id)
-
-        done = {a.document_id for a in Annotation.objects.filter(document__gold=False, label=label,
-                                                                 document__project_id=label.project_id)}
-        todo = Document.objects.filter(project=label.project, gold=False).exclude(pk__in=done)
-        if self.query:
-            todo = todo.filter(text__icontains=self.query)
+        done = {a.document_id for a in Annotation.objects.filter(document__gold=False, label=self.session.label,
+                                                                 document__project=self.session.project)}
+        todo = Document.objects.filter(project=self.session.project, gold=False).exclude(pk__in=done)
+        if self.session.query:
+            todo = todo.filter(text__icontains=self.session.query)
         todo = list(todo.values_list("id", flat=True))
-        logging.debug("{} documents in todo".format(len(todo)))
+        logging.debug("{ntodo} documents in todo (query: {q}, done={ndone})"
+                      .format(ntodo=len(todo), ndone=len(done), q=self.session.query))
         if len(todo) > self.N_SAMPLE:
             todo = sample(todo, self.N_SAMPLE)
 
         model = self._get_updated_model()
         tc = model.get_pipe("textcat")
-        docids = list(Document.objects.filter(pk__in=todo).values_list("id", flat=True))
-        tokens = [get_tokens(model, label.project_id, doc_id) for doc_id in docids]
-        scores = [d.cats[label.label] for d in tc.pipe(tokens)]
+
+        tokens = [get_tokens(model, self.session.project_id, doc_id) for doc_id in todo]
+        scores = [d.cats[self.session.label.label] for d in tc.pipe(tokens)]
         uncertainty = [abs(score - 0.5) for score in scores]
         index = list(argsort(uncertainty))[:n]
 
-        self.todo_docids = [docids[i] for i in index]
-        self.scores.update({docids[i]: scores[i] for i in index})
+        self.todo_docids = [todo[i] for i in index]
+        self.scores.update({todo[i]: scores[i] for i in index})
+        logging.debug("Saving state")
+        self._save_state(model)
         logging.info("Populating done, |todo|={}".format(len(self.todo_docids)))
+
+    def _save_state(self):
+        state = dict(docids=self.todo_docids, scores=self.scores)
+        self.session.state = json.dumps(state)
+        self.session.save()
 
     def _get_updated_model(self):
         """Get the classifier, updating if needed with coded documents"""
@@ -93,21 +98,6 @@ class ActiveLearn:
                     model.update(texts, annotations, sgd=optimizer, drop=0.2, losses=losses)
         return model
 
-    def to_dict(self):
-        """Serialize"""
-        return dict(label_id=self.label_id,
-                    session_id=self.session_id,
-                    todo_docids=self.todo_docids,
-                    scores=self.scores,
-                    query=self.query)
-
-    @classmethod
-    def from_dict(cls, state):
-        """Deserialize"""
-        al = cls(label_id=state["label_id"], session_id=state["session_id"], query=state["query"])
-        al.scores = {int(id): s for (id, s) in state["scores"].items()}
-        al.todo_docids = state["todo_docids"]
-        return al
 
 def evaluate(project: Project, model, annotations=None):
     """Evaluate a label based on the project's model and gold annotations"""
@@ -138,6 +128,7 @@ def retrain(project: Project, iterations=10):
 
     logging.info("Retraining model using {} annotations".format(len(annotations)))
     labels = {l.id: l.label for l in project.label_set.all()}
+    tc = model.get_pipe("textcat")
     with model.disable_pipes(*model.pipe_names[:-1]):
         optimizer = model.begin_training()
         for i in range(iterations):

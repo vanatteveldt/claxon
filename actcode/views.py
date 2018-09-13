@@ -111,15 +111,15 @@ class ActiveCodeView(TemplateView):
         self.project = Project.objects.get(pk=self.kwargs['project'])
         self.label = Label.objects.get(pk=self.kwargs['label'])
 
-        CACHE_KEY = _AC_CACHE_KEY.format(label=self.label.id)
-
-        state = self.request.session.get(CACHE_KEY)
-        if state:
-            self.state = ActiveLearn.from_dict(state)
+        # Get/create state and active learning session
+        if 'session' in self.kwargs:
+            session = Session.objects.get(pk=self.kwargs['session'])
         else:
-            session = Session.objects.create(project=self.project, train=True, description="Online active learning")
-            self.state = ActiveLearn(self.label.id, session.id)
+            session = Session.objects.create(project=self.project, train=True, label=self.label,
+                                             description="Online active learning")
+        self.state = ActiveLearn(session)
 
+        # Store current annotation
         if 'accept' in self.request.GET:
             doc = Document.objects.get(pk=int(self.request.GET['doc']))
             try:
@@ -132,7 +132,7 @@ class ActiveCodeView(TemplateView):
                 a.save()
 
         result = super().get(request, *args, **kwargs)
-        self.request.session[CACHE_KEY] = self.state.to_dict()
+        self.state.save()
         return result
 
 

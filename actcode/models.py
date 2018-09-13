@@ -19,18 +19,21 @@ class Document(models.Model):
     title = models.TextField()
 
 
-class Session(models.Model):
-    project = models.ForeignKey(Project, models.CASCADE)
-    train = models.BooleanField()
-    start_date = models.DateTimeField(default=datetime.datetime.now)
-    description = models.TextField()
-
 class Label(models.Model):
     project = models.ForeignKey(Project, models.CASCADE)
     label = models.TextField()
 
     def __str__(self):
         return self.label
+
+class Session(models.Model):
+    project = models.ForeignKey(Project, models.CASCADE)
+    label = models.ForeignKey(Label, models.CASCADE)
+    train = models.BooleanField()
+    start_date = models.DateTimeField(default=datetime.datetime.now)
+    description = models.TextField()
+    query = models.TextField(null=True)
+    state = models.TextField(null=True)
 
 class Annotation(models.Model):
     session = models.ForeignKey(Session, models.CASCADE)
