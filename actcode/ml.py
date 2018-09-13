@@ -134,12 +134,9 @@ def retrain(project: Project, iterations=10):
         for i in range(iterations):
             losses = {}
             for batch in tqdm(list(minibatch(annotations, size=compounding(4., 32., 1.001)))):
-                texts = dict(Document.objects.filter(pk__in={a.document_id for a in batch}).values_list("id", "text"))
-
-                batch_texts = [texts[a.document_id] for a in batch]
+                tokens = [get_tokens(model, project.id, a.document_id) for a in batch]
                 batch_annotations = [{'cats': {labels[a.label_id]: a.accept}} for a in batch]
-
-                model.update(batch_texts, batch_annotations, sgd=optimizer, drop=0.2, losses=losses)
+                model.update(tokens, batch_annotations, sgd=optimizer, drop=0.2, losses=losses)
             evals = evaluate(project, model)
             evals_t = evaluate(project, model, train_eval)
             logging.info("It.{:2}: {} (train: {})".format(i, combine(evals).eval_str(label=""), combine(evals_t).eval_str(label="")))
