@@ -6,9 +6,6 @@ from django.db import models
 class Project(models.Model):
     name = models.TextField()
     base_model = models.TextField()
-
-    model_timestamp = models.DateTimeField(null=True)
-    model_location = models.TextField(null=True)
     model_evaluation = models.TextField(null=True)
 
 class Document(models.Model):

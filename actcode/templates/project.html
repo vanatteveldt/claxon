@@ -28,7 +28,7 @@ Trained model: {{ view.project.model_location }} ({{ view.project.model_timestam
             <td>{{ l.re | floatformat:2}}</td>
             <td>{{ l.f1 | floatformat:2}}</td>
             <td>
-                [<a href="{% url 'actcode:code-learn' project=view.project.id label=l.label.id %}">Train</a>] |
+                [<a href="{% url 'actcode:code-start' project=view.project.id label=l.label.id %}">Train</a>] |
                 [<a href="{% url 'actcode:code-gold' project=view.project.id label=l.label.id %}">Evaluate</a>] |
                 [<a href="{% url 'actcode:code-filter' project=view.project.id label=l.label.id %}">Filter</a>]
             </td>

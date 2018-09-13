@@ -7,7 +7,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Count
 from django.shortcuts import redirect
 from django.urls import reverse
-from django.views.generic import TemplateView, FormView
+from django.views.generic import TemplateView, FormView, RedirectView
 
 from actcode.eval import Eval
 from actcode.ml import ActiveLearn
@@ -109,37 +109,27 @@ class ActiveCodeView(TemplateView):
 
     def get(self, request, *args, **kwargs):
         self.project = Project.objects.get(pk=self.kwargs['project'])
-        self.label = Label.objects.get(pk=self.kwargs['label'])
-
-        # Get/create state and active learning session
-        if 'session' in self.kwargs:
-            session = Session.objects.get(pk=self.kwargs['session'])
-        else:
-            session = Session.objects.create(project=self.project, train=True, label=self.label,
-                                             description="Online active learning")
+        session = Session.objects.get(pk=self.kwargs['session'])
         self.state = ActiveLearn(session)
 
         # Store current annotation
         if 'accept' in self.request.GET:
             doc = Document.objects.get(pk=int(self.request.GET['doc']))
             try:
-                a = Annotation.objects.get(document=doc, label_id=kwargs['label'])
-            except Annotation.DoesNotExist:
-                Annotation.objects.create(document=doc, label_id=kwargs['label'], accept=self.request.GET['accept'],
-                                          session_id=self.state.session_id)
-            else:
+                a = Annotation.objects.get(document=doc, label=session.label)
                 a.accept = self.request.GET['accept']
                 a.save()
+            except Annotation.DoesNotExist:
+                Annotation.objects.create(document=doc, label=session.label, session=session,
+                                          accept=self.request.GET['accept'])
 
-        result = super().get(request, *args, **kwargs)
-        self.state.save()
-        return result
+        return super().get(request, *args, **kwargs)
 
 
     def get_context_data(self, **kwargs):
         kwargs = super().get_context_data(**kwargs)
 
-        done = Annotation.objects.filter(session_id=self.state.session_id)
+        done = self.state.session.annotation_set.all()
 
         if 'next' in self.request.GET:
             docid = int(self.request.GET['next'])
@@ -149,9 +139,9 @@ class ActiveCodeView(TemplateView):
         score = self.state.scores.get(doc.id)
         ntodo = len(self.state.get_todo())
         text = doc.text.replace("\n", "<br/>")
-        if self.state.query:
-            text = re.sub("({})".format(self.state.query), "<b>\\1</b>", text, flags=re.I)
-        base_url = reverse("actcode:code-learn",  kwargs=dict(project=self.project.id, label=self.label.id))
+        if self.state.session.query:
+            text = re.sub("({})".format(self.state.session.query), "<b>\\1</b>", text, flags=re.I)
+        base_url = reverse("actcode:code-learn",  kwargs=dict(project=self.project.id, session=self.state.session.id))
         accept_url = "{base_url}?doc={doc.id}&accept=1".format(**locals())
         reject_url = "{base_url}?doc={doc.id}&accept=0".format(**locals())
         state = self.state
@@ -161,6 +151,15 @@ class ActiveCodeView(TemplateView):
 
 class FilterForm(forms.Form):
     query = forms.CharField()
+
+
+class ActiveCodeStartView(RedirectView):
+    def get_redirect_url(self, *args, **kwargs):
+        pid = self.kwargs['project']
+        lid = self.kwargs['label']
+        session = Session.objects.create(project_id=pid, train=True, label_id=lid,
+                                         description="Online active learning")
+        return reverse('actcode:code-learn', kwargs=dict(session=session.id, project=pid))
 
 
 class FilterView(FormView):
