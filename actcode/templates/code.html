@@ -22,7 +22,7 @@ Todo triggered? {{  state.session.populate_task_id }}
 Done: {{ done|length }} / {{ total }}
 {%  endif %}
 </pre>
-{%  if all_done %}
+{%  if all_done and not doc %}
 
     All done!
 {%  else %}

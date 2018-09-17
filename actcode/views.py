@@ -91,16 +91,28 @@ class CodeView(TemplateView):
         all_done = total <= len(done)
         percent = 100 * len(done) // total
         percent_w = 10 + 90 * len(done) // total
-        if not all_done:
-            if 'next' in self.request.GET:
-                docid = int(self.request.GET['next'])
-                doc = self.project.document_set.get(gold=True, pk=docid)
-            else:
-                doc = self.project.document_set.filter(gold=True).exclude(pk__in={a.document_id for a in done})[0]
+        if 'next' in self.request.GET:
+            docid = int(self.request.GET['next'])
+            doc = self.project.document_set.get(gold=True, pk=docid)
+        elif not all_done:
+            doc = self.project.document_set.filter(gold=True).exclude(pk__in={a.document_id for a in done})[0]
+        else:
+            doc = None
+        if doc is not None:
             text = doc.text.replace("\n", "<br/>")
             base_url = reverse("actcode:code-gold", kwargs=dict(project=self.project.id, label=self.label.id))
             accept_url = "{base_url}?doc={doc.id}&accept=1".format(**locals())
             reject_url = "{base_url}?doc={doc.id}&accept=0".format(**locals())
+
+            if all_done and 'next' in self.request.GET:
+                ids = [d.document_id for d in done]
+                print(ids)
+                cur = ids.index(doc.id)
+                if cur < len(ids):
+                    next = "&next={}".format(ids[cur + 1])
+                    accept_url += next
+                    reject_url += next
+
 
         kwargs.update(**locals())
         return kwargs
