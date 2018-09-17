@@ -168,8 +168,10 @@ def retrain(project: Project, iterations=10):
     logging.info("Done retraining!")
 
 
-def evaluate(project: Project, model, annotations=None):
+def evaluate(project: Project, model: Language=None, annotations=None):
     """Evaluate a label based on the project's model and gold annotations"""
+    if model is None:
+        model = get_model(project)
     tc = model.get_pipe("textcat")
     labels = {l.id: l.label for l in project.label_set.all()}
     eval = {label: Eval(label) for label in labels.values()}
