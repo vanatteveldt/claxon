@@ -106,7 +106,6 @@ class CodeView(TemplateView):
 
             if all_done and 'next' in self.request.GET:
                 ids = [d.document_id for d in done]
-                print(ids)
                 cur = ids.index(doc.id)
                 if cur < len(ids):
                     next = "&next={}".format(ids[cur + 1])
