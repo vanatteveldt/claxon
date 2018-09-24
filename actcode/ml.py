@@ -141,7 +141,7 @@ def get_todo(session: Session, model: Language, n=10) -> OrderedDict:
 
 def retrain(project: Project, iterations=10):
     model = get_base_model(project)
-    annotations = list(Annotation.objects.filter(document__project_id=project.id, document__gold=False))
+    annotations = list(Annotation.objects.filter(session__project_id=project.id, document__gold=False))
 
     train_eval = sample(annotations, 500) if len(annotations) > 500 else annotations
 
@@ -177,7 +177,7 @@ def evaluate(project: Project, model: Language=None, annotations=None):
 
     gold = {}  # doc.id : {label: T/F, ..}
     if annotations is None:
-        annotations = Annotation.objects.filter(document__gold=True, document__project=project)
+        annotations = Annotation.objects.filter(document__gold=True, session__project=project)
     for a in annotations:
         gold.setdefault(a.document_id, {})[labels[a.label_id]] = a.accept
 
