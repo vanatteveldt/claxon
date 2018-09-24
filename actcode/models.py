@@ -9,7 +9,6 @@ class Project(models.Model):
     model_evaluation = models.TextField(null=True)
 
 class Document(models.Model):
-    project = models.ForeignKey(Project, models.CASCADE)
     text = models.TextField()
     gold = models.BooleanField()
     reference = models.TextField(null=True)

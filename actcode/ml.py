@@ -108,7 +108,7 @@ class ActiveLearn:
                 optimizer = model.begin_training()
                 losses = {}
                 for batch in minibatch(annotations, size=compounding(4., 32., 1.001)):
-                    batch_tokens = [get_tokens(model, self.session.project_id, a.document_id) for a in batch]
+                    batch_tokens = [get_tokens(model,  a.document_id) for a in batch]
                     batch_annnotations = [{'cats': {self.session.label.label: a.accept}} for a in batch]
                     model.update(batch_tokens, batch_annnotations, sgd=optimizer, drop=0.2, losses=losses)
             is_updated = True
@@ -119,9 +119,8 @@ class ActiveLearn:
 
 def get_todo(session: Session, model: Language, n=10) -> OrderedDict:
     """Populate the queue of documents to code"""
-    done = {a.document_id for a in Annotation.objects.filter(document__gold=False, label=session.label,
-                                                             document__project=session.project)}
-    todo = Document.objects.filter(project=session.project, gold=False).exclude(pk__in=done)
+    done = {a.document_id for a in Annotation.objects.filter(document__gold=False, label=session.label)}
+    todo = Document.objects.filter(gold=False).exclude(pk__in=done)
     if session.query:
         todo = todo.filter(text__icontains=session.query)
     todo = list(todo.values_list("id", flat=True))
@@ -131,7 +130,7 @@ def get_todo(session: Session, model: Language, n=10) -> OrderedDict:
         todo = sample(todo, settings.N_SAMPLE)
 
     tc = model.get_pipe("textcat")
-    tokens = [get_tokens(model, session.project_id, doc_id) for doc_id in todo]
+    tokens = [get_tokens(model, doc_id) for doc_id in todo]
     scores = [d.cats[session.label.label] for d in tc.pipe(tokens)]
     uncertainty = [abs(score - 0.5) for score in scores]
     index = list(argsort(uncertainty))[:n]
@@ -154,7 +153,7 @@ def retrain(project: Project, iterations=10):
         for i in range(iterations):
             losses = {}
             for batch in tqdm(list(minibatch(annotations, size=compounding(4., 32., 1.001)))):
-                tokens = [get_tokens(model, project.id, a.document_id) for a in batch]
+                tokens = [get_tokens(model, a.document_id) for a in batch]
                 batch_annotations = [{'cats': {labels[a.label_id]: a.accept}} for a in batch]
                 model.update(tokens, batch_annotations, sgd=optimizer, drop=0.2, losses=losses)
             evals = evaluate(project, model)
@@ -183,7 +182,7 @@ def evaluate(project: Project, model: Language=None, annotations=None):
         gold.setdefault(a.document_id, {})[labels[a.label_id]] = a.accept
 
     docs = list(gold.keys())
-    tokens = [get_tokens(model, project.id, doc) for doc in docs]
+    tokens = [get_tokens(model, doc) for doc in docs]
     for doc, result in zip(docs, tc.pipe(tokens)):
         for label, accept in gold[doc].items():
             predict = result.cats[label] > .5
@@ -248,8 +247,8 @@ def _get_model(model_name: str, project: Project) -> Language:
 
 
 @lru_cache(maxsize=2048)
-def get_tokens(model: Language, project_id: int, doc_id: int):
-    fn = os.path.join(settings.TOKEN_DIR, "project_{}".format(project_id), str(doc_id))
+def get_tokens(model: Language, doc_id: int):
+    fn = os.path.join(settings.TOKEN_DIR, str(doc_id))
     if not os.path.exists(fn):
         raise ValueError("Document {doc_id} has not been preprocessed ({fn} does not exist)".format(**locals()))
     return Doc(model.vocab).from_disk(fn)

@@ -36,7 +36,7 @@ class ProjectView(TemplateView):
         kwargs = super().get_context_data(**kwargs)
 
         labelstats = {l.id: dict(label=l) for l in self.project.label_set.all()}
-        for a in Annotation.objects.filter(document__project=self.project.id).values("document__gold", "label",).annotate(n=Count('id')):
+        for a in Annotation.objects.filter(session__project=self.project.id).values("document__gold", "label",).annotate(n=Count('id')):
             key = 'ngold' if a['document__gold'] else 'ntrain'
             labelstats[a['label']][key] = a['n']
 
@@ -50,8 +50,8 @@ class ProjectView(TemplateView):
                 d["pr"] = eval.pr
                 d["re"] = eval.re
 
-        kwargs['ngold_total'] = self.project.document_set.filter(gold=True).count()
-        kwargs['ntrain_total'] = self.project.document_set.filter(gold=False).count()
+        kwargs['ngold_total'] = Document.objects.filter(gold=True).count()
+        kwargs['ntrain_total'] = Document.objects.filter(gold=False).count()
         kwargs['labelstats'] = sorted(labelstats.values(), key=lambda l:l['label'].label)
 
         return kwargs
@@ -70,11 +70,20 @@ class CodeView(TemplateView):
 
     def get(self, request, *args, **kwargs):
         if 'accept' in self.request.GET:
+            # hack, for now, use single session for all evaluation codings
+            description = "Evaluation"
+            lid = kwargs['label']
+            try:
+                session = Session.objects.get(project=self.project, train=False, label_id=lid, description=description)
+            except Session.DoesNotExist:
+                session = Session.objects.create(project=self.project, train=False, label_id=lid, description=description)
+
+
             doc = Document.objects.get(pk=int(self.request.GET['doc']))
             try:
                 a = Annotation.objects.get(document=doc, label_id=kwargs['label'])
             except Annotation.DoesNotExist:
-                Annotation.objects.create(document=doc, label_id=kwargs['label'], accept=self.request.GET['accept'])
+                Annotation.objects.create(document=doc, label_id=kwargs['label'], session=session, accept=self.request.GET['accept'])
             else:
                 a.accept = self.request.GET['accept']
                 a.save()
@@ -84,18 +93,19 @@ class CodeView(TemplateView):
     def get_context_data(self, **kwargs):
         kwargs = super().get_context_data(**kwargs)
 
-        done = list(Annotation.objects.filter(document__gold=True, label=self.label, document__project_id=self.project.id)
+        done = list(Annotation.objects.filter(document__gold=True, label=self.label, session__project_id=self.project.id)
                     .select_related("document").only("document_id", "accept", "document__text").order_by("-id"))
 
-        total = len(Document.objects.filter(gold=True, project_id=self.project.id))
+        total = len(Document.objects.filter(gold=True))
         all_done = total <= len(done)
         percent = 100 * len(done) // total
         percent_w = 10 + 90 * len(done) // total
+        label = self.label
         if 'next' in self.request.GET:
             docid = int(self.request.GET['next'])
-            doc = self.project.document_set.get(gold=True, pk=docid)
+            doc = Document.objects.get(gold=True, pk=docid)
         elif not all_done:
-            doc = self.project.document_set.filter(gold=True).exclude(pk__in={a.document_id for a in done})[0]
+            doc = Document.objects.filter(gold=True).exclude(pk__in={a.document_id for a in done})[0]
         else:
             doc = None
         if doc is not None:
@@ -143,7 +153,7 @@ class ActiveCodeView(TemplateView):
         kwargs = super().get_context_data(**kwargs)
 
         done = self.state.session.annotation_set.all()
-
+        label = self.state.session.label
         if 'next' in self.request.GET:
             docid = int(self.request.GET['next'])
             doc = self.project.document_set.get(pk=docid)
