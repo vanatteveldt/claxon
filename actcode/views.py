@@ -196,21 +196,20 @@ class FilterView(FormView):
         q = form.cleaned_data['query']
         pid = self.kwargs['project']
         lid = self.kwargs['label']
-        done = set(Annotation.objects.filter(document__project__id=pid, document__gold=False, label=lid)
+        done = set(Annotation.objects.filter(session__project__id=pid, document__gold=False, label=lid)
                    .order_by("document_id").distinct().values_list("document_id",flat=True))
-        self.n = Document.objects.filter(gold=False, project_id=self.kwargs['project']).exclude(pk__in=done).filter(text__icontains=q).count()
+        self.n = Document.objects.filter(gold=False).exclude(pk__in=done).filter(text__icontains=q).count()
         if 'check' in self.request.POST:
             return self.form_invalid(form)
         if self.n == 0:
             form.add_error(field=None, error="No documents found for query")
             return self.form_invalid(form)
 
-        session = Session.objects.create(project_id=pid, train=True,
-                                         description="Online active learning with query: {}".format(q))
-        state = ActiveLearn(lid, session.id, query=q)
-        CACHE_KEY = _AC_CACHE_KEY.format(label=lid)
-        self.request.session[CACHE_KEY] = state.to_dict()
-        return redirect('actcode:code-learn', label=lid, project=pid)
+
+
+        session = Session.objects.create(project_id=pid, train=True, label_id=lid,
+                                         description="Online active learning", query=q)
+        return redirect('actcode:code-learn',session=session.id, project=pid)
 
     def get_context_data(self, **kwargs):
         kwargs['n'] = getattr(self, "n", None)
