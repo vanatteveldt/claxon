@@ -1,3 +1,4 @@
+import csv
 import json
 import logging
 import re
@@ -6,13 +7,15 @@ from django import forms
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db.models import Count
+from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.urls import reverse
+from django.views import View
 from django.views.generic import TemplateView, FormView, RedirectView
 
 from actcode import tasks
 from actcode.eval import Eval
-from actcode.ml import ActiveLearn
+from actcode.ml import ActiveLearn, get_predictions
 from actcode.models import Project, Annotation, Label, Document, Session
 
 
@@ -212,3 +215,15 @@ class FilterView(FormView):
     def get_context_data(self, **kwargs):
         kwargs['n'] = getattr(self, "n", None)
         return super().get_context_data(**kwargs)
+
+class PredictionsView(View):
+    def get(self, request, *args, **kwargs):
+        project = Project.objects.get(pk=self.kwargs['project'])
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="somefilename.csv"'
+
+        writer = csv.writer(response)
+        writer.writerow(['document_id', 'label', 'gold', 'predict', 'score'])
+        for doc, label, accept, predict, score in get_predictions(project):
+            writer.writerow([str(doc), label, int(accept), int(predict), score])
+        return response

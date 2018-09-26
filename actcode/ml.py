@@ -5,6 +5,7 @@ import shutil
 from collections import OrderedDict
 from functools import lru_cache
 from random import sample
+from typing import Sequence
 
 import spacy
 from django.conf import settings
@@ -138,14 +139,9 @@ def get_todo(session: Session, model: Language, n=10) -> OrderedDict:
     return OrderedDict((todo[i], scores[i]) for i in index)
 
 
-
-def retrain(project: Project, iterations=10):
+def train(project: Project, annotations: Sequence[Annotation], iterations=10, callback=None):
     model = get_base_model(project)
-    annotations = list(Annotation.objects.filter(session__project_id=project.id, document__gold=False))
 
-    train_eval = sample(annotations, 500) if len(annotations) > 500 else annotations
-
-    logging.info("Retraining model using {} annotations".format(len(annotations)))
     labels = {l.id: l.label for l in project.label_set.all()}
     tc = model.get_pipe("textcat")
     with model.disable_pipes(*model.pipe_names[:-1]):
@@ -156,10 +152,20 @@ def retrain(project: Project, iterations=10):
                 tokens = [get_tokens(model, a.document_id) for a in batch]
                 batch_annotations = [{'cats': {labels[a.label_id]: a.accept}} for a in batch]
                 model.update(tokens, batch_annotations, sgd=optimizer, drop=0.2, losses=losses)
-            evals = evaluate(project, model)
-            evals_t = evaluate(project, model, train_eval)
-            logging.info("It.{:2}: {} (train: {})".format(i, combine(evals).eval_str(label=""), combine(evals_t).eval_str(label="")))
+            if callback:
+                callback(i, model)
+    return model
 
+def retrain(project: Project, iterations=10):
+    annotations = list(Annotation.objects.filter(session__project_id=project.id, document__gold=False))
+    train_eval = sample(annotations, 500) if len(annotations) > 500 else annotations
+    logging.info("Retraining model using {} annotations".format(len(annotations)))
+    def log_performance(i, model):
+        evals = evaluate(project, model)
+        evals_t = evaluate(project, model, train_eval)
+        logging.info("It.{:2}: {} (train: {})".format(i, combine(evals).eval_str(label=""), combine(evals_t).eval_str(label="")))
+    model = train(project, annotations, iterations, callback=log_performance)
+    evals = evaluate(project, model)
 
     save_model(model, project)
     project.model_evaluation = json.dumps([e.to_dict() for e in evals])
@@ -167,13 +173,12 @@ def retrain(project: Project, iterations=10):
     logging.info("Done retraining!")
 
 
-def evaluate(project: Project, model: Language=None, annotations=None):
+def get_predictions(project: Project, model: Language=None, annotations=None):
     """Evaluate a label based on the project's model and gold annotations"""
     if model is None:
         model = get_model(project)
     tc = model.get_pipe("textcat")
     labels = {l.id: l.label for l in project.label_set.all()}
-    eval = {label: Eval(label) for label in labels.values()}
 
     gold = {}  # doc.id : {label: T/F, ..}
     if annotations is None:
@@ -186,7 +191,15 @@ def evaluate(project: Project, model: Language=None, annotations=None):
     for doc, result in zip(docs, tc.pipe(tokens)):
         for label, accept in gold[doc].items():
             predict = result.cats[label] > .5
-            eval[label].add(accept, predict)
+            yield doc, label, accept, predict, result.cats[label]
+
+
+def evaluate(project: Project, model: Language=None, annotations=None):
+    """Evaluate a label based on the project's model and gold annotations"""
+    labels = {l.id: l.label for l in project.label_set.all()}
+    eval = {label: Eval(label) for label in labels.values()}
+    for _doc, label, accept, predict, _score in get_predictions(project, model, annotations):
+        eval[label].add(accept, predict)
     return eval.values()
 
 
