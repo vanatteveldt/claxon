@@ -11,7 +11,7 @@
 
 <pre>
 
-Project: <a href="{%  url 'actcode:project' project=view.project.id %}">{{ view.project.id}}: {{ view.project.name }}</a>
+Coding variable: <a href="{%  url 'actcode:project' project=view.project.id %}">{{ view.project.id}}: {{ view.project.name | title }}</a>
 Coding label: {{ label.label }}
     {% if state %}
 Active learning session {{ state.session.id }}, {{ ntodo }} left in queue

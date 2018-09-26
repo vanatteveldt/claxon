@@ -1,6 +1,6 @@
 {%  extends 'base.html' %}
 {% block content %}
-<h1>Project {{ view.project.id }}: {{  view.project.name }}</h1>
+<h1>Variable {{ view.project.id }}: {{  view.project.name | title }}</h1>
 <pre>
 Base model: {{ view.project.base_model }}
 #Documents (training): {{ ntrain_total }}

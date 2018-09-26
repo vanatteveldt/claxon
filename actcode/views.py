@@ -212,6 +212,7 @@ class FilterView(FormView):
         return redirect('actcode:code-learn',session=session.id, project=pid)
 
     def get_context_data(self, **kwargs):
+        self.project = Project.objects.get(pk=self.kwargs['project'])
         kwargs['n'] = getattr(self, "n", None)
         return super().get_context_data(**kwargs)
 
