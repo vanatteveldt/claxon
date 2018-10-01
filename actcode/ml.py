@@ -196,9 +196,10 @@ def get_predictions(project: Project, model: Language=None, annotations=None):
 
 def evaluate(project: Project, model: Language=None, annotations=None):
     """Evaluate a label based on the project's model and gold annotations"""
-    labels = {l.id: l.label for l in project.label_set.all()}
-    eval = {label: Eval(label) for label in labels.values()}
+    eval = {}
     for _doc, label, accept, predict, _score in get_predictions(project, model, annotations):
+        if label not in eval:
+            eval[label] = Eval(label)
         eval[label].add(accept, predict)
     return eval.values()
 
