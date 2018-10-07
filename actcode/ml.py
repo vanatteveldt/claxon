@@ -139,7 +139,7 @@ def get_todo(session: Session, model: Language, n=10) -> OrderedDict:
     return OrderedDict((todo[i], scores[i]) for i in index)
 
 
-def train(project: Project, annotations: Sequence[Annotation], iterations=10, callback=None):
+def train(project: Project, annotations: Sequence[Annotation], iterations=10, drop=.2, callback=None):
     model = get_base_model(project)
 
     labels = {l.id: l.label for l in project.label_set.all()}
@@ -151,7 +151,7 @@ def train(project: Project, annotations: Sequence[Annotation], iterations=10, ca
             for batch in tqdm(list(minibatch(annotations, size=compounding(4., 32., 1.001)))):
                 tokens = [get_tokens(model, a.document_id) for a in batch]
                 batch_annotations = [{'cats': {labels[a.label_id]: a.accept}} for a in batch]
-                model.update(tokens, batch_annotations, sgd=optimizer, drop=0.2, losses=losses)
+                model.update(tokens, batch_annotations, sgd=optimizer, drop=drop, losses=losses)
             if callback:
                 callback(i, model)
     return model
