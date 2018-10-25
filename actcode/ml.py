@@ -145,7 +145,7 @@ def train(project: Project, annotations: Sequence[Annotation], iterations=10, dr
     labels = {l.id: l.label for l in project.label_set.all()}
     tc = model.get_pipe("textcat")
     with model.disable_pipes(*model.pipe_names[:-1]):
-        optimizer = model.begin_training()
+        optimizer = model.begin_training(device=0)
         for i in range(iterations):
             losses = {}
             for batch in tqdm(list(minibatch(annotations, size=compounding(4., 32., 1.001)))):
